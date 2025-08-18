@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Invoice History</h2>
+
+<form method="post" style="margin-bottom:15px;">
+    <input type="text" name="search" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
+    <button type="submit">Search</button>
+    <a href="{{ url_for('history') }}">Clear</a>
+</form>
+
+<table border="1" cellpadding="8" cellspacing="0">
+    <tr style="background:#eee;">
+        <th>Invoice ID</th>
+        <th>Customer</th>
+        <th>Phone</th>
+        <th>Date</th>
+        <th>Grand Total</th>
+        <th>Action</th>
+    </tr>
+    {% for row in rows %}
+    <tr>
+        <td>{{ row[0] }}</td>
+        <td>{{ row[1] }}</td>
+        <td>{{ row[2] }}</td>
+        <td>{{ row[3] }}</td>
+        <td>₹{{ "%.2f"|format(row[4]) }}</td>
+        <td><a href="{{ url_for('reprint', invoice_id=row[0]) }}">Reprint</a></td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% if rows|length == 0 %}
+<p>No invoices found.</p>
+{% endif %}
+{% endblock %}

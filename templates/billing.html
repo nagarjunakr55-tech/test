@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Billing</h2>
+<form method="post">
+    Name: <input type="text" name="name" value="Guest"><br>
+    Phone: <input type="text" name="phone" value="9999999999"><br>
+    <button type="submit">Generate Invoice</button>
+</form>
+{% endblock %}
