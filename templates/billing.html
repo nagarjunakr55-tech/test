@@ -15,6 +15,7 @@
   <label for="barcode">Barcode</label>
   <input id="barcode" type="text" placeholder="Scan barcode then Enter" style="flex:1;">
   <button id="btnBarcode">Add</button>
+  <button id="btnScan">Scan with Camera</button>
 </div>
 
 <!-- Manual entry -->
@@ -42,6 +43,19 @@
       <button id="sClose">Close</button>
     </div>
     <div id="sResults" style="margin-top:10px; max-height:380px; overflow:auto; border:1px solid #eee;"></div>
+  </div>
+</div>
+
+<!-- Camera Scan Modal -->
+<div id="scanModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:2000;">
+  <div style="background:#fff; margin:6vh auto; padding:12px; max-width:520px; box-shadow:0 10px 30px rgba(0,0,0,.2);">
+    <h3>Scan barcode</h3>
+    <video id="scanVideo" playsinline muted autoplay style="width:100%; background:#000; border-radius:6px;"></video>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; justify-content:space-between;">
+      <select id="cameraSelect" style="flex:1;"></select>
+      <button id="scanClose">Close</button>
+    </div>
+    <p id="scanStatus" style="font-size:12px; color:#666; margin-top:6px;">Point the camera at a barcode…</p>
   </div>
 </div>
 
@@ -82,6 +96,9 @@
 <h3 style="margin-top:12px;">Invoice Preview</h3>
 <pre id="invoicePreview" style="white-space:pre-wrap; background:#fafafa; border:1px solid #eee; padding:8px; min-height:120px;"></pre>
 
+<!-- Load ZXing BEFORE our script -->
+<script src="https://unpkg.com/@zxing/library@0.19.1"></script>
+
 <script>
 // ---------- Sizes ----------
 const mSize = document.getElementById('mSize');
@@ -99,7 +116,7 @@ let cart = [];
 let subtotal = 0, finalTotal = 0;
 let lastInvoiceId = null;
 // Discount is ONLY applied when the button is clicked
-let appliedDiscount = "";  // e.g., "20%" or "100"
+let appliedDiscount = "";  // "20%" or "100"
 
 // ---------- Helpers ----------
 function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
@@ -140,7 +157,7 @@ function recalc() {
         discountAmt = subtotal * (pct/100.0); // NO max rule for %
       }
     } else {
-      // flat, enforce max rule here as a safeguard (UI mirror; server also enforces)
+      // flat, enforce max rule (UI mirror; server also enforces)
       const flat = parseFloat(appliedDiscount);
       if (!isNaN(flat) && flat >= 0) {
         const grandAfter = subtotal - flat;
@@ -157,8 +174,6 @@ function recalc() {
   finalTotal = Math.max(0, subtotal - discountAmt);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
-
-// Recalc when typing? -> NO. Only on Apply or cart changes.
 
 // ---------- Cart rendering ----------
 function renderCart() {
@@ -185,6 +200,7 @@ function renderCart() {
   recalc();
   invalidateCheckout();  // any cart change cancels previous proceed
 }
+
 document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const btn = e.target;
   const act = btn.getAttribute('data-act');
@@ -232,18 +248,27 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   }
 });
 
-// ---------- Barcode ----------
+// ---------- Barcode (manual) ----------
 async function addBarcode() {
   const code = document.getElementById('barcode').value.trim();
-  if (!code) return;
   document.getElementById('barcode').value = '';
-  const r = await fetch('{{ url_for("api_barcode_lookup") }}', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({barcode: code})
-  });
-  const j = await r.json();
-  if (!j.ok) { alert('Barcode not found'); return; }
-  upsertCartItem(j.item);
+  if (!code) return;
+  await addBarcodeByCode(code);
+}
+async function addBarcodeByCode(code) {
+  if (!code) return;
+  try {
+    const r = await fetch('{{ url_for("api_barcode_lookup") }}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ barcode: String(code).trim() })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('Barcode not found'); return; }
+    upsertCartItem(j.item);
+  } catch (e) {
+    alert('Network error');
+  }
 }
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
 document.getElementById('btnBarcode').addEventListener('click', addBarcode);
@@ -298,7 +323,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   });
 });
 
-// ---------- Autofill customer name by phone ----------
+// ---------- Autofill name by phone ----------
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
   const ph = e.target.value.replace(/\D/g,'').slice(0,10);
   e.target.value = ph;
@@ -318,7 +343,6 @@ proceedBtn.addEventListener('click', async ()=>{
   if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
   if (!cart.length) { alert('Cart is empty'); return; }
 
-  // send ONLY the applied discount
   const discount = appliedDiscount;
 
   proceedBtn.disabled = true;
@@ -358,7 +382,7 @@ proceedBtn.addEventListener('click', async ()=>{
     printBtn.href = '{{ url_for("print_invoice", invoice_id="__ID__") }}'.replace('__ID__', lastInvoiceId);
     setPrintEnabled(true);
 
-    proceedBtn.textContent = 'Proceeded'; // will re-enable when cart/discount changes
+    proceedBtn.textContent = 'Proceeded'; // re-enabled once cart/discount changes
   } catch (e) {
     alert('Network error');
     proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
@@ -384,16 +408,71 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   setPrintEnabled(false);
 });
 
-// ---------- Barcode + Manual + Search wiring (unchanged) ----------
-document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
-document.getElementById('btnBarcode').addEventListener('click', addBarcode);
-document.getElementById('btnAdd').addEventListener('click', ()=>{}); // already attached above
-document.getElementById('btnSearch').addEventListener('click', ()=>{}); // already attached above
-
 // ---------- Init ----------
 (function init(){
-  // sizes and first render handled already
   renderCart();
 })();
+
+// ===== Camera Scan (ZXing) =====
+let zxingReader = null;
+let zxingControls = null;
+
+async function startCameraScan() {
+  const modal = document.getElementById('scanModal');
+  const video = document.getElementById('scanVideo');
+  const select = document.getElementById('cameraSelect');
+  const status = document.getElementById('scanStatus');
+
+  modal.style.display = 'block';
+  status.textContent = 'Starting camera…';
+
+  try {
+    zxingReader = new ZXing.BrowserMultiFormatReader();
+
+    // list cameras
+    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    if (!devices || devices.length === 0) {
+      status.textContent = 'No camera found on this device.';
+      return;
+    }
+    // populate selector
+    select.innerHTML = devices.map(d => `<option value="${d.deviceId}">${d.label || d.deviceId}</option>`).join('');
+    // pick a back camera if present
+    const preferredId = (devices.find(d => /back|rear/i.test(d.label)) || devices[0]).deviceId;
+
+    const startDecoding = async (deviceId) => {
+      status.textContent = 'Point the camera at a barcode…';
+      await zxingReader.decodeFromVideoDevice(deviceId, video, (result, err, controls) => {
+        zxingControls = controls;
+        if (result) {
+          stopCameraScan();
+          const text = result.getText().trim();
+          addBarcodeByCode(text);
+        }
+        // ignore err (stream continues until a result)
+      });
+    };
+
+    await startDecoding(preferredId);
+
+    // switching camera
+    select.onchange = async () => {
+      if (zxingControls) zxingControls.stop();
+      if (zxingReader) zxingReader.reset();
+      await startDecoding(select.value);
+    };
+  } catch (e) {
+    status.textContent = 'Could not start camera: ' + e;
+  }
+}
+
+function stopCameraScan() {
+  if (zxingControls) { zxingControls.stop(); zxingControls = null; }
+  if (zxingReader) { zxingReader.reset(); zxingReader = null; }
+  document.getElementById('scanModal').style.display = 'none';
+}
+
+document.getElementById('btnScan').addEventListener('click', startCameraScan);
+document.getElementById('scanClose').addEventListener('click', stopCameraScan);
 </script>
 {% endblock %}
