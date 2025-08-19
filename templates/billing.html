@@ -20,7 +20,7 @@
 <!-- Barcode (manual input only) -->
 <div class="row" style="margin-top:10px;">
   <label for="barcode" class="nowrap">Barcode</label>
-  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Scan barcode then press Enter" autocomplete="off">
+  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Enter Barcode" autocomplete="off">
   <button id="btnBarcode">Add</button>
 </div>
 
@@ -69,7 +69,7 @@
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
         <th style="text-align:right;">SP Price</th>
-        <th style="text-align:right;">Subtotal</th>
+        
         <th style="text-align:center;"></th>
       </tr>
     </thead>
@@ -205,7 +205,7 @@ function renderCart() {
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
       <td style="text-align:right;">${Number(it.price||0).toFixed(2)}</td>
-      <td style="text-align:right;">${money((it.price||0)*(it.qty||0))}</td>
+      
       <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
