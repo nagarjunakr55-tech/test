@@ -2,10 +2,6 @@
 import os, sys
 # --- debug versions ---
 import sys, flask, werkzeug
-print("RUNNING WITH:", sys.executable)
-print("Flask:", flask.__version__, "Werkzeug:", werkzeug.__version__)
-# ----------------------
-
 
 # Get the real Flask app created in app.py when run as __main__
 app = None
