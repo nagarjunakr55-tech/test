@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Invoice Preview</h2>
-<pre style="font-family:monospace;">{{ invoice }}</pre>
+<pre>{{ invoice }}</pre>
 
 <a href="{{ url_for('billing') }}" class="btn">Back</a>
 <button onclick="location.href='{{ url_for('print_invoice', invoice_id=invoice_id) }}'">Print</button>

@@ -1,36 +1,13 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=76.2mm, initial-scale=1, user-scalable=no">
-  <title>Print 3" Receipt</title>
-  <style>
-    /* Force true 3-inch width and NO margins */
-    @page { size: 76.2mm auto; margin: 0; }
-    html, body { margin: 0; padding: 0; width: 76.2mm; background: white; }
-    pre {
-      margin: 0; padding: 0;
-      white-space: pre; /* preserve ASCII layout */
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px; line-height: 1.2;
-    }
-    @media screen {
-      body { display: flex; justify-content: center; }
-      .preview { width: 76.2mm; border: 1px dashed #ccc; }
-      .no-print { text-align:center; margin:8px 0; }
-    }
-    @media print {
-      .preview { border: 0; }
-      .no-print { display: none !important; }
-    }
-  </style>
-</head>
-<body>
+{% extends "base.html" %}
+{% set body_class = "is-print" %}
+
+{% block content %}
+  <div class="no-print" style="text-align:center; margin-bottom:10px;">
+    <button onclick="window.print()">Print</button>
+    <a href="javascript:history.back()" class="btn">Back</a>
+  </div>
+
   <div class="preview">
     <pre>{{ invoice }}</pre>
   </div>
-  <div class="no-print">
-    <button onclick="window.print()">Print</button>
-  </div>
-</body>
-</html>
+{% endblock %}
