@@ -37,7 +37,9 @@
     <h3>Search Product</h3>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <input id="sBrand" placeholder="brand contains..." style="flex:1; min-width:140px;">
-      <select id="sCategory" style="min-width:140px;"><option value="">Any</option><option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option></select>
+      <select id="sCategory" style="min-width:140px;">
+        <option value="">Any</option><option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+      </select>
       <input id="sSize" placeholder="size (optional)" style="width:140px;">
       <button id="sGo">Search</button>
       <button id="sClose">Close</button>
@@ -96,8 +98,8 @@
 <h3 style="margin-top:12px;">Invoice Preview</h3>
 <pre id="invoicePreview" style="white-space:pre-wrap; background:#fafafa; border:1px solid #eee; padding:8px; min-height:120px;"></pre>
 
-<!-- Load ZXing BEFORE our script -->
-<script src="https://unpkg.com/@zxing/library@0.19.1"></script>
+<!-- ZXing must load BEFORE our script -->
+<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
 
 <script>
 // ---------- Sizes ----------
@@ -115,7 +117,6 @@ refreshSizes();
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 let lastInvoiceId = null;
-// Discount is ONLY applied when the button is clicked
 let appliedDiscount = "";  // "20%" or "100"
 
 // ---------- Helpers ----------
@@ -157,15 +158,13 @@ function recalc() {
         discountAmt = subtotal * (pct/100.0); // NO max rule for %
       }
     } else {
-      // flat, enforce max rule (UI mirror; server also enforces)
-      const flat = parseFloat(appliedDiscount);
+      const flat = parseFloat(appliedDiscount); // flat -> max rule
       if (!isNaN(flat) && flat >= 0) {
         const grandAfter = subtotal - flat;
         if (grandAfter >= (boughtTotal + 250)) {
           discountAmt = Math.min(flat, subtotal);
         } else {
-          // if cart changed and now violates, keep discount unapplied visually
-          discountAmt = 0;
+          discountAmt = 0; // violates max rule after cart change
         }
       }
     }
@@ -418,8 +417,8 @@ let zxingReader = null;
 let zxingControls = null;
 
 async function startCameraScan() {
-  const modal = document.getElementById('scanModal');
-  const video = document.getElementById('scanVideo');
+  const modal  = document.getElementById('scanModal');
+  const video  = document.getElementById('scanVideo');
   const select = document.getElementById('cameraSelect');
   const status = document.getElementById('scanStatus');
 
@@ -427,17 +426,24 @@ async function startCameraScan() {
   status.textContent = 'Starting camera…';
 
   try {
+    if (!window.ZXing || !ZXing.BrowserMultiFormatReader) {
+      status.textContent = 'Scanner library not loaded.';
+      return;
+    }
+
     zxingReader = new ZXing.BrowserMultiFormatReader();
 
-    // list cameras
-    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    // ✅ instance method
+    const devices = await zxingReader.listVideoInputDevices();
     if (!devices || devices.length === 0) {
       status.textContent = 'No camera found on this device.';
       return;
     }
-    // populate selector
-    select.innerHTML = devices.map(d => `<option value="${d.deviceId}">${d.label || d.deviceId}</option>`).join('');
-    // pick a back camera if present
+
+    select.innerHTML = devices
+      .map(d => `<option value="${d.deviceId}">${d.label || d.deviceId}</option>`)
+      .join('');
+
     const preferredId = (devices.find(d => /back|rear/i.test(d.label)) || devices[0]).deviceId;
 
     const startDecoding = async (deviceId) => {
@@ -446,21 +452,20 @@ async function startCameraScan() {
         zxingControls = controls;
         if (result) {
           stopCameraScan();
-          const text = result.getText().trim();
-          addBarcodeByCode(text);
+          const code = result.getText().trim();
+          addBarcodeByCode(code);
         }
-        // ignore err (stream continues until a result)
       });
     };
 
     await startDecoding(preferredId);
 
-    // switching camera
     select.onchange = async () => {
       if (zxingControls) zxingControls.stop();
-      if (zxingReader) zxingReader.reset();
+      if (zxingReader)  zxingReader.reset();
       await startDecoding(select.value);
     };
+
   } catch (e) {
     status.textContent = 'Could not start camera: ' + e;
   }
@@ -468,7 +473,7 @@ async function startCameraScan() {
 
 function stopCameraScan() {
   if (zxingControls) { zxingControls.stop(); zxingControls = null; }
-  if (zxingReader) { zxingReader.reset(); zxingReader = null; }
+  if (zxingReader)  { zxingReader.reset();  zxingReader  = null; }
   document.getElementById('scanModal').style.display = 'none';
 }
 
