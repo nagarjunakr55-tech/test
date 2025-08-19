@@ -9,6 +9,15 @@
   <meta name="format-detection" content="telephone=no,email=no,address=no" />
 
   <style>
+    nav{ margin-top:8px; display:flex; gap:12px; flex-wrap:wrap; }
+nav a{ color:#fff; text-decoration:none; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.15); }
+nav a:hover{ background:rgba(255,255,255,.25); }
+/* logout link floats to the right side of nav */
+nav a.logout {
+  margin-left: auto;
+  background: var(--warn);   /* orange-red */
+}
+
     :root{
       --brand:#673AB7; --accent:#03A9F4; --accent-2:#388E3C; --warn:#FF5722; --muted:#607D8B;
       --fg:#222; --bg:#fafafa; --border:#eaeaea; --radius:10px;
@@ -98,10 +107,18 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <header>
     <h2>DRIP Billing</h2>
     <nav>
-      <a href="{{ url_for('billing') }}">Billing</a>
-      <a href="{{ url_for('history') }}">History</a>
-      <a href="{{ url_for('home') }}">Home</a>
-    </nav>
+  <a href="{{ url_for('billing') }}">Billing</a>
+  <a href="{{ url_for('history') }}">History</a>
+  <a href="{{ url_for('home') }}">Home</a>
+
+  {% if session.get('user') %}
+  <a href="{{ url_for('auth.logout') }}" class="logout">
+    Logout
+  </a>
+{% endif %}
+
+</nav>
+
   </header>
 
   <div class="container">

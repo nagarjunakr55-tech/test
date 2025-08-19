@@ -20,7 +20,10 @@
 <!-- Barcode (manual input only) -->
 <div class="row" style="margin-top:10px;">
   <label for="barcode" class="nowrap">Barcode</label>
-  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Enter Barcode" autocomplete="off">
+  <input id="barcode" class="grow" type="text" 
+       placeholder="Enter Barcode" 
+       autocomplete="off">
+
   <button id="btnBarcode">Add</button>
 </div>
 
@@ -40,6 +43,12 @@
     <button id="btnSearch">Search Product</button>
   </div>
 </div>
+<script>
+  // Force barcode input to uppercase
+  document.getElementById('barcode').addEventListener('input', e => {
+    e.target.value = e.target.value.toUpperCase();
+  });
+</script>
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
