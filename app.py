@@ -16,7 +16,10 @@ from logic.billing_logic import (
     get_last_customer_name,
     calculate_totals,
 )
+
+
 from db import get_connection
+
 
 
 def create_app() -> Flask:
@@ -151,7 +154,7 @@ def create_app() -> Flask:
         invoice = get_invoice_text(invoice_id)
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
-        return render_template("print.html", invoice=invoice, label_mm=80)
+        return render_template("print.html", invoice=invoice, label_mm=100)
 
 
     @app.route("/print")
@@ -187,6 +190,11 @@ def create_app() -> Flask:
         }
         return jsonify({"ok": True, "item": item})
 
+    @app.get("/health")
+    def health():
+        return {"ok": True}, 200
+
+        
     @app.post("/api/search_products")
     def api_search_products():
         data = request.get_json(silent=True) or {}
@@ -264,8 +272,10 @@ def create_app() -> Flask:
 
 
 app = create_app()
+import auth_init
+
 
 if __name__ == "__main__":
     print("Starting dev server on http://127.0.0.1:5000 …")
     # Run unbuffered so logs show immediately
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
