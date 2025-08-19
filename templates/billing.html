@@ -3,24 +3,31 @@
 <h2>Billing</h2>
 
 <!-- Customer -->
-<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-  <label for="custName">Name</label>
-  <input id="custName" type="text" placeholder="Guest" value="Guest">
-  <label for="custPhone">Phone</label>
-  <input id="custPhone" type="tel" placeholder="10 digits" maxlength="10" pattern="\d*">
+<div class="row">
+  <label for="custName" class="nowrap">Name</label>
+  <input id="custName" class="grow" type="text" placeholder="Guest" value="Guest" autocomplete="name">
+
+  <label for="custPhone" class="nowrap">Phone</label>
+  <input id="custPhone"
+         class="grow"
+         type="tel"
+         inputmode="numeric"
+         pattern="[0-9]*"
+         placeholder="10 digits"
+         maxlength="10"
+         autocomplete="tel"value="9848022338">
 </div>
 
-<!-- Barcode -->
-<div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
-  <label for="barcode">Barcode</label>
-  <input id="barcode" type="text" placeholder="Scan barcode then Enter" style="flex:1;">
+<!-- Barcode (manual only) -->
+<div class="row" style="margin-top:10px;">
+  <label for="barcode" class="nowrap">Barcode</label>
+  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Scan barcode then press Enter" autocomplete="off">
   <button id="btnBarcode">Add</button>
-  <button id="btnScan">Scan with Camera</button>
 </div>
 
 <!-- Manual entry -->
-<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-  <input id="mBrand" type="text" placeholder="Brand" style="flex:1; min-width:160px;">
+<div class="row" style="margin-top:10px;">
+  <input id="mBrand" type="text" placeholder="Brand" class="grow" style="min-width:160px;">
   <select id="mCategory" style="min-width:120px;">
     <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
   </select>
@@ -35,8 +42,8 @@
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
   <div style="background:#fff; margin:8vh auto; padding:12px; max-width:700px; box-shadow:0 10px 30px rgba(0,0,0,.2);">
     <h3>Search Product</h3>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <input id="sBrand" placeholder="brand contains..." style="flex:1; min-width:140px;">
+    <div class="row">
+      <input id="sBrand" placeholder="brand contains..." class="grow" style="min-width:140px;">
       <select id="sCategory" style="min-width:140px;">
         <option value="">Any</option><option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
       </select>
@@ -48,32 +55,19 @@
   </div>
 </div>
 
-<!-- Camera Scan Modal -->
-<div id="scanModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:2000;">
-  <div style="background:#fff; margin:6vh auto; padding:12px; max-width:520px; box-shadow:0 10px 30px rgba(0,0,0,.2);">
-    <h3>Scan barcode</h3>
-    <video id="scanVideo" playsinline muted autoplay style="width:100%; background:#000; border-radius:6px;"></video>
-    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; justify-content:space-between;">
-      <select id="cameraSelect" style="flex:1;"></select>
-      <button id="scanClose">Close</button>
-    </div>
-    <p id="scanStatus" style="font-size:12px; color:#666; margin-top:6px;">Point the camera at a barcode…</p>
-  </div>
-</div>
-
 <!-- Cart table -->
 <div class="table-responsive" style="margin-top:12px;">
-  <table id="cartTable" style="width:100%; border-collapse:collapse;">
+  <table id="cartTable">
     <thead>
       <tr style="background:#f5f5f5;">
-        <th style="text-align:left; padding:6px;">Brand</th>
-        <th style="text-align:left; padding:6px;">Category</th>
-        <th style="text-align:left; padding:6px;">Size</th>
-        <th style="text-align:left; padding:6px;">Qty</th>
-        <th style="text-align:right; padding:6px;">MRP</th>
-        <th style="text-align:right; padding:6px;">SP Price</th>
-        <th style="text-align:right; padding:6px;">Subtotal</th>
-        <th style="text-align:center; padding:6px;"></th>
+        <th style="text-align:left;">Brand</th>
+        <th style="text-align:left;">Category</th>
+        <th style="text-align:left;">Size</th>
+        <th style="text-align:left;">Qty</th>
+        <th style="text-align:right;">MRP</th>
+        <th style="text-align:right;">SP Price</th>
+        <th style="text-align:right;">Subtotal</th>
+        <th style="text-align:center;"></th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -81,7 +75,7 @@
 </div>
 
 <!-- Totals + discount -->
-<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+<div class="row" style="margin-top:10px;">
   <label for="discount">Discount</label>
   <input id="discount" placeholder="e.g. 20% or 100">
   <button id="applyDiscount">Apply Discount</button>
@@ -89,17 +83,14 @@
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
-  <button id="btnProceed" class="btn" style="background:#388E3C; color:white; padding:6px 12px; border-radius:6px;">Proceed</button>
-  <a id="btnPrint" class="btn" style="pointer-events:none; opacity:.5; background:#607D8B; color:white; padding:6px 12px; border-radius:6px;" href="#" target="_blank">Print</a>
-  <button id="btnClear" class="btn" style="background:#FF5722; color:white; padding:6px 12px; border-radius:6px;">Clear Cart</button>
+  <button id="btnProceed" class="btn-green">Proceed</button>
+  <a id="btnPrint" class="btn-muted" style="pointer-events:none; opacity:.5;" href="#" target="_blank">Print</a>
+  <button id="btnClear" class="btn-warn">Clear Cart</button>
 </div>
 
 <!-- Invoice preview -->
 <h3 style="margin-top:12px;">Invoice Preview</h3>
-<pre id="invoicePreview" style="white-space:pre-wrap; background:#fafafa; border:1px solid #eee; padding:8px; min-height:120px;"></pre>
-
-<!-- ZXing must load BEFORE our script -->
-<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
+<pre id="invoicePreview" style="background:#fafafa; border:1px solid #eee; padding:8px; min-height:120px;"></pre>
 
 <script>
 // ---------- Sizes ----------
@@ -181,18 +172,18 @@ function renderCart() {
   cart.forEach((it, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="padding:6px; border-top:1px solid #eee;">${it.brand||''}</td>
-      <td style="padding:6px; border-top:1px solid #eee;">${it.category||''}</td>
-      <td style="padding:6px; border-top:1px solid #eee;">${it.size||''}</td>
-      <td style="padding:6px; border-top:1px solid #eee;">
+      <td>${it.brand||''}</td>
+      <td>${it.category||''}</td>
+      <td>${it.size||''}</td>
+      <td>
         <button data-act="minus" data-i="${idx}">-</button>
         <span style="display:inline-block; width:28px; text-align:center;">${it.qty}</span>
         <button data-act="plus" data-i="${idx}">+</button>
       </td>
-      <td style="padding:6px; border-top:1px solid #eee; text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
-      <td style="padding:6px; border-top:1px solid #eee; text-align:right;">${Number(it.price||0).toFixed(2)}</td>
-      <td style="padding:6px; border-top:1px solid #eee; text-align:right;">${money((it.price||0)*(it.qty||0))}</td>
-      <td style="padding:6px; border-top:1px solid #eee; text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
+      <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
+      <td style="text-align:right;">${Number(it.price||0).toFixed(2)}</td>
+      <td style="text-align:right;">${money((it.price||0)*(it.qty||0))}</td>
+      <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
   });
@@ -209,7 +200,7 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
   if (act === 'remove'){ cart.splice(i,1); renderCart(); }
 });
 
-// ---------- Apply Discount (only place discount takes effect) ----------
+// ---------- Apply Discount (only on click) ----------
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   const inputStr = (document.getElementById('discount').value || '').trim();
   if (!inputStr) {
@@ -217,44 +208,27 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     recalc(); invalidateCheckout();
     return;
   }
-
   const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
 
   if (inputStr.endsWith('%')) {
     const pct = parseFloat(inputStr.slice(0,-1));
-    if (isNaN(pct) || pct < 0 || pct > 100) {
-      alert('Invalid discount.');
-      return;
-    }
-    // percent -> NO max rule
-    appliedDiscount = inputStr;
-    recalc(); invalidateCheckout();
+    if (isNaN(pct) || pct < 0 || pct > 100) { alert('Invalid discount.'); return; }
+    appliedDiscount = inputStr;                     // % → no max rule
   } else {
-    // flat -> enforce max rule
     const flat = parseFloat(inputStr);
-    if (isNaN(flat) || flat < 0) {
-      alert('Invalid discount.');
-      return;
-    }
+    if (isNaN(flat) || flat < 0) { alert('Invalid discount.'); return; }
     const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
     const grandAfter = subtotalLocal - flat;
-    if (grandAfter < (boughtTotal + 250)) {
-      alert('Maximum discount reached.');
-      return; // do not apply
-    }
-    appliedDiscount = String(flat);
-    recalc(); invalidateCheckout();
+    if (grandAfter < (boughtTotal + 250)) { alert('Maximum discount reached.'); return; }
+    appliedDiscount = String(flat);                 // flat → max rule enforced
   }
+  recalc(); invalidateCheckout();
 });
 
 // ---------- Barcode (manual) ----------
 async function addBarcode() {
   const code = document.getElementById('barcode').value.trim();
   document.getElementById('barcode').value = '';
-  if (!code) return;
-  await addBarcodeByCode(code);
-}
-async function addBarcodeByCode(code) {
   if (!code) return;
   try {
     const r = await fetch('{{ url_for("api_barcode_lookup") }}', {
@@ -283,7 +257,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   upsertCartItem({
     brand, category, size, qty,
     mrp_price: price,
-    bought_price: price,   // if unknown, mirror selling price; server rule still OK
+    bought_price: price,   // if unknown, mirror selling price
     price
   });
   document.getElementById('mBrand').value = '';
@@ -381,7 +355,7 @@ proceedBtn.addEventListener('click', async ()=>{
     printBtn.href = '{{ url_for("print_invoice", invoice_id="__ID__") }}'.replace('__ID__', lastInvoiceId);
     setPrintEnabled(true);
 
-    proceedBtn.textContent = 'Proceeded'; // re-enabled once cart/discount changes
+    proceedBtn.textContent = 'Proceeded';
   } catch (e) {
     alert('Network error');
     proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
@@ -411,73 +385,5 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
 (function init(){
   renderCart();
 })();
-
-// ===== Camera Scan (ZXing) =====
-let zxingReader = null;
-let zxingControls = null;
-
-async function startCameraScan() {
-  const modal  = document.getElementById('scanModal');
-  const video  = document.getElementById('scanVideo');
-  const select = document.getElementById('cameraSelect');
-  const status = document.getElementById('scanStatus');
-
-  modal.style.display = 'block';
-  status.textContent = 'Starting camera…';
-
-  try {
-    if (!window.ZXing || !ZXing.BrowserMultiFormatReader) {
-      status.textContent = 'Scanner library not loaded.';
-      return;
-    }
-
-    zxingReader = new ZXing.BrowserMultiFormatReader();
-
-    // ✅ instance method
-    const devices = await zxingReader.listVideoInputDevices();
-    if (!devices || devices.length === 0) {
-      status.textContent = 'No camera found on this device.';
-      return;
-    }
-
-    select.innerHTML = devices
-      .map(d => `<option value="${d.deviceId}">${d.label || d.deviceId}</option>`)
-      .join('');
-
-    const preferredId = (devices.find(d => /back|rear/i.test(d.label)) || devices[0]).deviceId;
-
-    const startDecoding = async (deviceId) => {
-      status.textContent = 'Point the camera at a barcode…';
-      await zxingReader.decodeFromVideoDevice(deviceId, video, (result, err, controls) => {
-        zxingControls = controls;
-        if (result) {
-          stopCameraScan();
-          const code = result.getText().trim();
-          addBarcodeByCode(code);
-        }
-      });
-    };
-
-    await startDecoding(preferredId);
-
-    select.onchange = async () => {
-      if (zxingControls) zxingControls.stop();
-      if (zxingReader)  zxingReader.reset();
-      await startDecoding(select.value);
-    };
-
-  } catch (e) {
-    status.textContent = 'Could not start camera: ' + e;
-  }
-}
-
-function stopCameraScan() {
-  if (zxingControls) { zxingControls.stop(); zxingControls = null; }
-  if (zxingReader)  { zxingReader.reset();  zxingReader  = null; }
-  document.getElementById('scanModal').style.display = 'none';
-}
-
-document.getElementById('btnScan').addEventListener('click', startCameraScan);
-document.getElementById('scanClose').addEventListener('click', stopCameraScan);
 </script>
 {% endblock %}
