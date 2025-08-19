@@ -1,127 +1,143 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>DRIP Billing</title>
+  <meta charset="utf-8" />
+  <title>DRIP Billing</title>
 
-    <!-- Make all pages fill the phone screen properly -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Make every page fill the phone screen properly -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-    <style>
-        /* Global reset + mobile-friendly defaults */
-        * { box-sizing: border-box; }
-        html, body { height: 100%; }
-        body {
-            margin: 0; /* remove the old 20px margin */
-            font-family: Arial, sans-serif;
-            font-size: 16px;             /* >=16px prevents iOS zoom on inputs */
-            line-height: 1.4;
-            background: #fafafa;
-            color: #222;
-        }
+  <style>
+    /* ---------- Global / Mobile-Friendly Defaults ---------- */
+    * { box-sizing: border-box; }
+    html, body { height: 100%; width: 100%; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      font-size: 16px;              /* >=16px prevents iOS zoom on inputs */
+      line-height: 1.4;
+      background: #fafafa;
+      color: #222;
+    }
 
-        header { background: #673AB7; color: white; padding: 12px; }
-        header h2 { margin: 0; font-size: 20px; }
-        nav { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
-        nav a { color: white; text-decoration: none; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.15); }
-        nav a:hover { background: rgba(255,255,255,0.25); }
+    /* ---------- Header & Nav ---------- */
+    header { background: #673AB7; color: #fff; padding: 12px; }
+    header h2 { margin: 0; font-size: 20px; }
+    nav { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
+    nav a {
+      color: #fff; text-decoration: none;
+      padding: 6px 10px; border-radius: 6px;
+      background: rgba(255,255,255,0.15);
+    }
+    nav a:hover { background: rgba(255,255,255,0.25); }
 
-        .container {
-            width: 100%;
-            max-width: 100%;
-            padding: 12px;               /* small, consistent inner padding */
-        }
+    /* ---------- Layout Container ---------- */
+    .container { width: 100%; max-width: 100%; padding: 12px; }
 
-        /* Buttons & links styled as buttons */
-        button, .btn {
-            padding: 12px 16px;
-            border: none;
-            border-radius: 8px;
-            background: #03A9F4;
-            color: white;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-        }
-        button:hover, .btn:hover { background: #0288D1; }
+    /* ---------- Buttons & Links as Buttons ---------- */
+    button, .btn {
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #03A9F4;
+      color: #fff;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    button:hover, .btn:hover { background: #0288D1; }
 
-        /* Forms */
-        input[type="text"], input[type="tel"], input[type="number"] {
-            width: 100%;
-            padding: 10px 12px;
-            margin: 6px 0 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 16px;             /* prevent mobile zoom */
-            background: white;
-        }
+    /* ---------- Forms ---------- */
+    input[type="text"], input[type="tel"], input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      margin: 6px 0 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;              /* avoid mobile auto-zoom */
+      background: #fff;
+    }
 
-        /* Monospace blocks (invoice preview) */
-        pre {
-            margin: 0;
-            padding: 8px;
-            white-space: pre;             /* keep ASCII alignment */
-            overflow-x: auto;             /* allow horizontal scroll if needed */
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-            background: #fff;
-            border: 1px solid #eee;
-            border-radius: 8px;
-        }
+    /* ---------- Monospace Blocks (Invoice Preview) ---------- */
+    pre {
+      margin: 0;
+      padding: 8px;
+      white-space: pre;              /* preserve ASCII alignment */
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
 
-        /* Tables (history) */
-        .table-responsive { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; background: #fff; }
-        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-        thead th { background: #f3f3f3; }
+    /* ---------- Tables (History) ---------- */
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    thead th { background: #f3f3f3; }
 
-        /* Small-screen tweaks */
-        @media (max-width: 600px) {
-            header h2 { font-size: 18px; }
-            nav a { padding: 6px 8px; }
-            pre { font-size: 18px; line-height: 1.3; }  /* bigger & readable on phones */
-            button, .btn { width: 100%; margin-top: 10px; }
-        }
+    /* ---------- Small-Screen Tweaks ---------- */
+    @media (max-width: 600px) {
+      header h2 { font-size: 18px; }
+      nav a { padding: 6px 8px; }
+      pre { font-size: 18px; line-height: 1.3; }  /* bigger on phones */
+      button, .btn { width: 100%; margin-top: 10px; }
+    }
 
-        /* Print defaults for ALL pages: hide chrome */
-        @media print {
-            header, nav, .no-print { display: none !important; }
-            body { margin: 0; background: #fff; }
-            .container { padding: 0; }
-        }
+    /* ---------- Default Print Cleanup for ALL Pages ---------- */
+    @media print {
+      header, nav, .no-print { display: none !important; }
+      body { margin: 0; background: #fff; }
+      .container { padding: 0; }
+    }
 
-        /* Special rules ONLY for the dedicated print label page */
-        /* We’ll add class="is-print" to <body> on that page */
-        @page { /* default page box; specialized below for .is-print */ }
-        @media print {
-            body.is-print, body.is-print .container {
-                width: 76.2mm !important;   /* exact 3-inch width */
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            body.is-print pre {
-                margin: 0; padding: 0;      /* no padding when printing the label */
-                font-size: 12px;
-                line-height: 1.2;
-                border: 0;
-            }
-            /* lock the physical page size and margins to the label */
-            body.is-print { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            @page { size: 76.2mm auto; margin: 0; }
-        }
-    </style>
+    /* =========================================================
+       SPECIAL RULES for the dedicated label print page
+       (i.e., templates/print.html sets body_class="is-print")
+       ========================================================= */
+
+    /* On SCREEN: make print page fill the phone width (readable, no side gaps) */
+    body.is-print .container { padding: 0; }
+    body.is-print .preview { width: 100vw; max-width: 100vw; margin: 0; }
+    body.is-print pre {
+      margin: 0; padding: 8px;          /* readable on screen */
+      font-size: 18px; line-height: 1.3;
+      border-radius: 0;
+      border: 0;
+    }
+
+    /* On PAPER: force exact 3-inch (76.2mm) width, ZERO margins */
+    @media print {
+      body.is-print, body.is-print .container {
+        width: 76.2mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      body.is-print .preview { width: 76.2mm !important; margin: 0 !important; }
+      body.is-print pre {
+        margin: 0; padding: 0;          /* no side padding on paper */
+        font-size: 12px; line-height: 1.2;
+        border: 0;
+      }
+      /* lock physical page box */
+      @page { size: 76.2mm auto; margin: 0; }
+    }
+  </style>
 </head>
-<body class="{{ body_class|default('') }}">
-    <header>
-        <h2>DRIP Billing</h2>
-        <nav>
-            <a href="{{ url_for('billing') }}">Billing</a>
-            <a href="{{ url_for('history') }}">History</a>
-            <a href="{{ url_for('home') }}">Home</a>
-        </nav>
-    </header>
 
-    <div class="container">
-        {% block content %}{% endblock %}
-    </div>
+<!-- body_class is set by each template (e.g., print.html sets is-print) -->
+<body class="{{ body_class|default('') }}">
+  <header>
+    <h2>DRIP Billing</h2>
+    <nav>
+      <a href="{{ url_for('billing') }}">Billing</a>
+      <a href="{{ url_for('history') }}">History</a>
+      <a href="{{ url_for('home') }}">Home</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
 </body>
 </html>

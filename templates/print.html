@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% set body_class = "is-print" %}
-
 {% block content %}
-  <div class="no-print" style="text-align:center; margin-bottom:10px;">
-    <button onclick="window.print()">Print</button>
-    <a href="javascript:history.back()" class="btn">Back</a>
-  </div>
-
   <div class="preview">
     <pre>{{ invoice }}</pre>
   </div>
