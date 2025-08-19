@@ -8,11 +8,14 @@ import string
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
 
-# ---------- Table bootstrap ----------
+# ---------------------------------
+# Bootstrap tables (Postgres)
+# ---------------------------------
 def ensure_tables():
     conn = get_connection()
     cur = conn.cursor()
-    # sales_history (as you had)
+
+    # Sales history (receipts)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sales_history (
         id SERIAL PRIMARY KEY,
@@ -29,7 +32,8 @@ def ensure_tables():
         invoice_text TEXT
     )
     """)
-    # barcode_catalog for product lookup/search
+
+    # Product catalog for barcode/search
     cur.execute("""
     CREATE TABLE IF NOT EXISTS barcode_catalog (
         id SERIAL PRIMARY KEY,
@@ -43,11 +47,14 @@ def ensure_tables():
         status TEXT
     )
     """)
+
     conn.commit()
     cur.close()
     conn.close()
 
-# ---------- Product lookups ----------
+# ---------------------------------
+# Product lookups
+# ---------------------------------
 def find_product_by_barcode(code: str):
     conn = get_connection()
     cur = conn.cursor()
@@ -60,11 +67,16 @@ def find_product_by_barcode(code: str):
     """, (code,))
     row = cur.fetchone()
     conn.close()
+
     if not row:
         return None
     return {
-        "brand": row[0], "mrp": row[1], "bought_price": row[2],
-        "selling_price": row[3], "size": row[4], "category": row[5]
+        "brand": row[0],
+        "mrp": row[1],
+        "bought_price": row[2],
+        "selling_price": row[3],
+        "size": row[4],
+        "category": row[5],
     }
 
 def search_products(brand: str = "", category: str = "", size: str = "", limit: int = 20):
@@ -95,8 +107,12 @@ def search_products(brand: str = "", category: str = "", size: str = "", limit: 
     out = []
     for r in rows:
         out.append({
-            "brand": r[0], "mrp": r[1], "bought_price": r[2],
-            "selling_price": r[3], "size": r[4], "category": r[5]
+            "brand": r[0],
+            "mrp": r[1],
+            "bought_price": r[2],
+            "selling_price": r[3],
+            "size": r[4],
+            "category": r[5],
         })
     return out
 
@@ -104,37 +120,43 @@ def get_last_customer_name(phone: str):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT customer_name FROM sales_history
+        SELECT customer_name
+        FROM sales_history
         WHERE phone = %s
-        ORDER BY id DESC LIMIT 1
+        ORDER BY id DESC
+        LIMIT 1
     """, (phone,))
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
 
-# ---------- Invoice ID ----------
+# ---------------------------------
+# Invoice ID
+# ---------------------------------
 def generate_unique_invoice_id() -> str:
+    """Generate a 6-char unique invoice id and verify against DB."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT invoice_id FROM sales_history")
-    existing = {r[0] for r in cur.fetchall() if r[0]}
-    cur.close(); conn.close()
     while True:
         candidate = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        if candidate not in existing:
+        cur.execute("SELECT 1 FROM sales_history WHERE invoice_id = %s LIMIT 1", (candidate,))
+        if not cur.fetchone():
+            conn.close()
             return candidate
 
-# ---------- Totals & rules ----------
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
 _ALLOWED_PCTS = {5, 10, 15, 20, 25}
 
 def calculate_totals(items, discount_input: str):
     """
     items: [{price, qty, bought_price, ...}]
-    discount_input: "10%" or "100" (flat)
+    discount_input: "10%" (must be in allowed set) or flat "100"
     Rules:
       - If %: must be in _ALLOWED_PCTS
       - If %: final must be >= sum(bought_price*qty) + 250
-      - If flat: no max rule, just clamp >= 0
+      - If flat: no max rule; clamp not below 0
     """
     if not items:
         raise ValueError("empty_cart")
@@ -144,6 +166,7 @@ def calculate_totals(items, discount_input: str):
 
     discount_amt = 0.0
     di = (discount_input or "").strip()
+
     if di.endswith("%"):
         try:
             pct = float(di[:-1])
@@ -162,7 +185,7 @@ def calculate_totals(items, discount_input: str):
         except:
             raise ValueError("invalid_discount")
         discount_amt = min(flat, subtotal)
-    # totals
+
     grand_total = max(0.0, subtotal - discount_amt)
     gst = grand_total - (grand_total / 1.05)
 
@@ -173,7 +196,9 @@ def calculate_totals(items, discount_input: str):
         "gst": round(gst, 2),
     }
 
-# ---------- Invoice text (same format you used) ----------
+# ---------------------------------
+# Invoice text (monospace)
+# ---------------------------------
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
     lines = []
     now = datetime.now().strftime("%Y-%m-%d")
@@ -205,11 +230,14 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
 
     return "\n".join(lines)
 
-# ---------- Persistence (your original, kept) ----------
+# ---------------------------------
+# Persistence
+# ---------------------------------
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
 
+    # Ensure table exists (safe if already created)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sales_history (
         id SERIAL PRIMARY KEY,
@@ -241,7 +269,9 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     cur.close()
     conn.close()
 
-# ---------- Existing (kept) ----------
+# ---------------------------------
+# Queries for history & reprint
+# ---------------------------------
 def get_invoices(search_term=""):
     conn = get_connection()
     cur = conn.cursor()
@@ -253,103 +283,14 @@ def get_invoices(search_term=""):
             ORDER BY id DESC
         """, (f"%{search_term}%", f"%{search_term}%"))
     else:
-        cur.execute("SELECT invoice_id, customer_name, phone, date, grand_total FROM sales_history ORDER BY id DESC")
-    rows = cur.fetchall()
-    conn.close()
-    return rows
-
-def get_invoice_text(invoice_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT invoice_text FROM sales_history WHERE invoice_id = %s", (invoice_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
-    lines = []
-    now = datetime.now().strftime("%Y-%m-%d")
-
-    lines.append(" " * 20 + BRAND_NAME)
-    lines.append("-" * 48)
-    lines.append(f"{'Invoice: ' + str(invoice_id):<30}{'Date: ' + now:>18}")
-    lines.append(f"Customer: {customer_name} / {customer_phone}")
-    lines.append("-" * 48)
-    lines.append(f"{'No Brand':<13} {'Size Qty MRP Price':>25}")
-    lines.append("-" * 48)
-
-    for idx, item in enumerate(items, start=1):
-        no = str(idx).ljust(3)
-        brand = item.get("brand", "")[:20].ljust(20)
-        size = str(item.get("size", "")).ljust(5)
-        qty = str(item.get("qty", 1))
-        mrp_val = f"{float(item.get('mrp_price', 0)):.0f}"
-        price_val = f"{float(item.get('price', 0)):.0f}"
-        lines.append(f"{no}{brand}{size}{qty}{mrp_val:<6}{price_val:>6}")
-
-    lines.append("-" * 48)
-    lines.append(f"{'Subtotal':<24}{subtotal:>24.2f}")
-    if discount_amt > 0:
-        lines.append(f"{'Discount':<24}{'-'+format(discount_amt, '.2f'):>24}")
-    lines.append(f"{'Grand Total':<24}{grand_total:>24.2f}")
-    lines.append("-" * 48)
-    lines.append("Thank you for shopping with DRIP!".center(48))
-
-    return "\n".join(lines)
-
-
-def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS sales_history (
-        id SERIAL PRIMARY KEY,
-        invoice_id TEXT UNIQUE,
-        customer_name TEXT,
-        phone TEXT,
-        items TEXT,
-        total NUMERIC,
-        discount NUMERIC,
-        gst NUMERIC,
-        grand_total NUMERIC,
-        gstin TEXT,
-        date TIMESTAMP,
-        invoice_text TEXT
-    )
-    """)
-
-    cur.execute("""
-        INSERT INTO sales_history
-        (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
-        ON CONFLICT (invoice_id) DO NOTHING
-    """, (
-        invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, invoice_text
-    ))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def get_invoices(search_term=""):
-    conn = get_connection()
-    cur = conn.cursor()
-    if search_term:
         cur.execute("""
             SELECT invoice_id, customer_name, phone, date, grand_total
             FROM sales_history
-            WHERE phone ILIKE %s OR invoice_id ILIKE %s
             ORDER BY id DESC
-        """, (f"%{search_term}%", f"%{search_term}%"))
-    else:
-        cur.execute("SELECT invoice_id, customer_name, phone, date, grand_total FROM sales_history ORDER BY id DESC")
+        """)
     rows = cur.fetchall()
     conn.close()
     return rows
-
 
 def get_invoice_text(invoice_id):
     conn = get_connection()
