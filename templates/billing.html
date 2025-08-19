@@ -1,9 +1,286 @@
 {% extends "base.html" %}
 {% block content %}
+
 <h2>Billing</h2>
-<form method="post">
-    Name: <input type="text" name="name" value="Guest"><br>
-    Phone: <input type="text" name="phone" value="9999999999"><br>
-    <button type="submit">Generate Invoice</button>
-</form>
+
+<!-- Customer -->
+<div>
+  <label>Name</label>
+  <input id="custName" type="text" placeholder="Guest" value="Guest">
+  <label>Phone</label>
+  <input id="custPhone" type="tel" placeholder="10 digits" maxlength="10" pattern="\d*">
+</div>
+
+<!-- Barcode -->
+<div style="margin-top:10px;">
+  <label>Barcode</label>
+  <input id="barcode" type="text" placeholder="Scan barcode and press Enter">
+  <button id="btnBarcode">Add</button>
+</div>
+
+<!-- Manual entry -->
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+  <input id="mBrand" type="text" placeholder="Brand" style="flex:1;">
+  <select id="mCategory">
+    <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+  </select>
+  <select id="mSize"></select>
+  <input id="mPrice" type="number" min="0" step="0.01" placeholder="Price">
+  <input id="mQty" type="number" min="1" step="1" value="1" style="width:90px;">
+  <button id="btnAdd">Add</button>
+  <button id="btnSearch">Search Product</button>
+</div>
+
+<!-- Search modal (simple) -->
+<div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);">
+  <div style="background:#fff; margin:10% auto; padding:12px; max-width:600px;">
+    <h3>Search Product</h3>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <input id="sBrand" placeholder="brand contains..." style="flex:1;">
+      <select id="sCategory"><option value="">Any</option><option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option></select>
+      <input id="sSize" placeholder="size (optional)" style="width:120px;">
+      <button id="sGo">Search</button>
+      <button id="sClose">Close</button>
+    </div>
+    <div id="sResults" style="margin-top:10px; max-height:300px; overflow:auto;"></div>
+  </div>
+</div>
+
+<!-- Cart table -->
+<div class="table-responsive" style="margin-top:12px;">
+  <table id="cartTable">
+    <thead>
+      <tr>
+        <th>Brand</th><th>Category</th><th>Size</th>
+        <th>Qty</th><th>MRP</th><th>SP Price</th><th>Subtotal</th><th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- Totals + discount -->
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+  <label>Discount</label>
+  <input id="discount" placeholder="10% or 100">
+  <button id="applyDiscount">Apply Discount</button>
+  <strong id="totalLbl">Total: ₹0.00</strong>
+  <strong id="finalLbl">Final: ₹0.00</strong>
+  <button id="btnProceed" class="btn">Proceed & Print</button>
+  <button id="btnClear" class="btn" style="background:#FF5722;">Clear Cart</button>
+</div>
+
+<!-- Invoice preview -->
+<h3 style="margin-top:12px;">Invoice Preview</h3>
+<pre id="invoicePreview"></pre>
+
+<script>
+const mSize = document.getElementById('mSize');
+const mCategory = document.getElementById('mCategory');
+function refreshSizes() {
+  const c = mCategory.value;
+  const sizes = (c === 'Shirt' || c === 'T-Shirt') ? ['S','M','L','XL'] : ['28','30','32','34','36','38'];
+  mSize.innerHTML = sizes.map(s=>`<option>${s}</option>`).join('');
+}
+mCategory.addEventListener('change', refreshSizes);
+refreshSizes();
+
+// State
+let cart = [];
+let subtotal = 0, finalTotal = 0;
+
+// Helpers
+function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
+
+function recalc() {
+  subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
+  document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
+  // Final is computed locally (best-effort); server validates on checkout
+  const d = (document.getElementById('discount').value||'').trim();
+  let discountAmt = 0, grand = subtotal;
+  if (d.endsWith('%')) {
+    const pct = parseFloat(d.slice(0,-1));
+    if ([5,10,15,20,25].includes(pct)) {
+      discountAmt = subtotal * (pct/100.0);
+    }
+  } else if (d) {
+    const flat = parseFloat(d); if (!isNaN(flat)) discountAmt = Math.min(flat, subtotal);
+  }
+  grand = Math.max(0, subtotal - discountAmt);
+  finalTotal = grand;
+  document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
+}
+
+function renderCart() {
+  const tb = document.querySelector('#cartTable tbody');
+  tb.innerHTML = '';
+  cart.forEach((it, idx) => {
+    const tr = document.createElement('tr');
+
+    tr.innerHTML = `
+      <td>${it.brand||''}</td>
+      <td>${it.category||''}</td>
+      <td>${it.size||''}</td>
+      <td>
+        <button data-act="minus" data-i="${idx}">-</button>
+        <span style="display:inline-block; width:28px; text-align:center;">${it.qty}</span>
+        <button data-act="plus" data-i="${idx}">+</button>
+      </td>
+      <td>${Number(it.mrp_price||0).toFixed(2)}</td>
+      <td><input data-act="price" data-i="${idx}" type="number" step="0.01" value="${Number(it.price||0).toFixed(2)}" style="width:100px;"></td>
+      <td>${money((it.price||0)*(it.qty||0))}</td>
+      <td><button data-act="remove" data-i="${idx}">x</button></td>
+    `;
+    tb.appendChild(tr);
+  });
+  recalc();
+}
+
+document.querySelector('#cartTable').addEventListener('click', (e)=>{
+  const btn = e.target;
+  const act = btn.getAttribute('data-act');
+  const i = +btn.getAttribute('data-i');
+  if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty)-1); if(cart[i].qty===0) cart.splice(i,1); renderCart(); }
+  if (act === 'plus')  { cart[i].qty = Number(cart[i].qty)+1; renderCart(); }
+  if (act === 'remove'){ cart.splice(i,1); renderCart(); }
+});
+document.querySelector('#cartTable').addEventListener('input', (e)=>{
+  const inp = e.target;
+  if (inp.getAttribute('data-act') === 'price') {
+    const i = +inp.getAttribute('data-i');
+    cart[i].price = Math.max(0, parseFloat(inp.value||0));
+    renderCart();
+  }
+});
+
+// Barcode add
+async function addBarcode() {
+  const code = document.getElementById('barcode').value.trim();
+  if (!code) return;
+  document.getElementById('barcode').value = '';
+  const r = await fetch('{{ url_for("api_barcode_lookup") }}', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({barcode: code})
+  });
+  const j = await r.json();
+  if (!j.ok) { alert('Barcode not found'); return; }
+  cart.push(j.item);
+  renderCart();
+}
+document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
+document.getElementById('btnBarcode').addEventListener('click', addBarcode);
+
+// Manual add
+document.getElementById('btnAdd').addEventListener('click', ()=>{
+  const brand = document.getElementById('mBrand').value.trim();
+  const price = parseFloat(document.getElementById('mPrice').value||0);
+  const qty = Math.max(1, parseInt(document.getElementById('mQty').value||1,10));
+  const size = document.getElementById('mSize').value;
+  const category = document.getElementById('mCategory').value;
+  if (!brand || !price) { alert('Enter brand and price'); return; }
+  cart.push({
+    brand, category, size, qty,
+    mrp_price: price,
+    bought_price: price,   // no cost known; equals price for now
+    price
+  });
+  document.getElementById('mBrand').value = '';
+  document.getElementById('mPrice').value = '';
+  document.getElementById('mQty').value = 1;
+  renderCart();
+});
+
+// Search modal
+document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
+document.getElementById('sClose').addEventListener('click', ()=> document.getElementById('searchModal').style.display='none');
+document.getElementById('sGo').addEventListener('click', async ()=>{
+  const brand = document.getElementById('sBrand').value.trim();
+  const category = document.getElementById('sCategory').value;
+  const size = document.getElementById('sSize').value.trim();
+  const r = await fetch('{{ url_for("api_search_products") }}', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({brand, category, size, limit: 50})
+  });
+  const j = await r.json();
+  const box = document.getElementById('sResults'); box.innerHTML='';
+  if (!j.ok || !j.results.length) { box.textContent='No results'; return; }
+  j.results.forEach((it, idx)=>{
+    const row = document.createElement('div');
+    row.style.borderBottom='1px solid #eee';
+    row.style.padding='6px';
+    row.innerHTML = `
+      <strong>${it.brand}</strong> — ${it.category}, ${it.size}
+      | MRP: ${Number(it.mrp_price||0).toFixed(2)}
+      | Price: ${Number(it.price||0).toFixed(2)}
+      <button data-idx="${idx}">Add</button>
+    `;
+    row.querySelector('button').addEventListener('click', ()=>{
+      cart.push({...it, qty:1});
+      renderCart();
+    });
+    box.appendChild(row);
+  });
+});
+
+// Customer phone autofill last name
+document.getElementById('custPhone').addEventListener('input', async (e)=>{
+  const ph = e.target.value.replace(/\D/g,'').slice(0,10);
+  e.target.value = ph;
+  if (ph.length === 10) {
+    const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
+    const j = await r.json();
+    if (j.ok && j.name) document.getElementById('custName').value = j.name;
+  }
+});
+
+// Recalc & discount
+document.getElementById('applyDiscount').addEventListener('click', recalc);
+
+// Proceed & Print
+document.getElementById('btnProceed').addEventListener('click', async ()=>{
+  const name = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
+  const phone = (document.getElementById('custPhone').value || '').trim();
+  if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
+  if (!cart.length) { alert('Cart is empty'); return; }
+
+  // Build payload
+  const payload = {
+    customer_name: name,
+    phone,
+    items: cart.map(i => ({
+      brand: i.brand, category: i.category, size: i.size,
+      qty: Number(i.qty||0),
+      mrp_price: Number(i.mrp_price||0),
+      bought_price: Number(i.bought_price||0),
+      price: Number(i.price||0)
+    })),
+    discount: (document.getElementById('discount').value || '').trim()
+  };
+
+  const res = await fetch('{{ url_for("api_checkout") }}', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const j = await res.json();
+  if (!j.ok) {
+    alert(j.error || 'Checkout failed');
+    return;
+  }
+
+  // Show preview & redirect to print (auto-opens dialog)
+  document.getElementById('invoicePreview').textContent = j.invoice_text;
+  location.href = '{{ url_for("print_invoice", invoice_id="__ID__") }}'.replace('__ID__', j.invoice_id);
+});
+
+// Clear cart
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  cart = [];
+  renderCart();
+  document.getElementById('discount').value = '';
+  document.getElementById('invoicePreview').textContent = '';
+});
+
+// First render
+renderCart();
+</script>
 {% endblock %}
