@@ -151,7 +151,8 @@ def create_app() -> Flask:
         invoice = get_invoice_text(invoice_id)
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
-        return render_template("print.html", invoice=invoice)
+        return render_template("print.html", invoice=invoice, label_mm=80)
+
 
     @app.route("/print")
     def print_invoice_query():
