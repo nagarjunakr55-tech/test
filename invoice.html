@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Invoice Preview</h2>
+<pre style="font-family:monospace;">{{ invoice }}</pre>
+<button onclick="window.print()">🖨️ Print</button>
+<a href="{{ url_for('billing') }}">Back</a>
+<!-- invoice.html (add) -->
+<a href="{{ url_for('print_invoice', invoice_id='INV001') }}">Print (3-inch, no margins)</a>
+
+{% endblock %}

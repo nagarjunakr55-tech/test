@@ -44,6 +44,16 @@ def reprint(invoice_id):
     if invoice:
         return render_template("invoice.html", invoice=invoice)
     return f"Invoice {invoice_id} not found", 404
+# app.py (add this route)
+from flask import Flask, render_template, request, redirect, url_for
+# ...existing imports...
+
+@app.route("/print/<invoice_id>")
+def print_invoice(invoice_id):
+    invoice = get_invoice_text(invoice_id)
+    if not invoice:
+        return f"Invoice {invoice_id} not found", 404
+    return render_template("print.html", invoice=invoice)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
