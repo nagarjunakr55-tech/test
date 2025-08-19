@@ -55,5 +55,52 @@ def print_invoice(invoice_id):
         return f"Invoice {invoice_id} not found", 404
     return render_template("print.html", invoice=invoice)
 
+# app.py (add this)
+from io import BytesIO
+from flask import send_file
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+
+@app.route("/printpdf/<invoice_id>")
+def printpdf(invoice_id):
+    invoice = get_invoice_text(invoice_id)
+    if not invoice:
+        return f"Invoice {invoice_id} not found", 404
+
+    # Compute height based on lines (12pt * 1.2 line height ~= 14.4pt)
+    lines = invoice.splitlines()
+    line_height_pt = 12 * 1.2
+    top_margin_pt = 0  # zero margins
+    bottom_margin_pt = 0
+    height_pt = int(len(lines) * line_height_pt) + 10  # small buffer
+
+    width_pt = 76.2 * mm  # exactly 3 inches wide
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=(width_pt, height_pt))
+
+    # Draw text starting near the top-left (origin is bottom-left)
+    x = 0    # left edge
+    y = height_pt - line_height_pt  # start from top
+    c.setFont("Courier", 10)  # mono font
+
+    for ln in lines:
+        c.drawString(x, y, ln)
+        y -= line_height_pt
+        if y < 0:  # very long receipts: new page
+            c.showPage()
+            y = height_pt - line_height_pt
+            c.setFont("Courier", 10)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    return send_file(
+        buf, mimetype="application/pdf",
+        as_attachment=False, download_name=f"{invoice_id}.pdf"
+    )
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
