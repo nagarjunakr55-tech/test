@@ -5,7 +5,7 @@
 
 <button onclick="window.print()">🖨 Print</button>
 <a href="{{ url_for('billing') }}">Back</a>
+
+<!-- 3-inch, zero-margin print view -->
 <a href="{{ url_for('print_invoice', invoice_id=invoice_id) }}">Print (3-inch, no margins)</a>
-
-
 {% endblock %}

@@ -5,26 +5,23 @@
   <meta name="viewport" content="width=76.2mm, initial-scale=1, user-scalable=no">
   <title>Print 3" Receipt</title>
   <style>
+    /* Force true 3-inch width and NO margins */
     @page { size: 76.2mm auto; margin: 0; }
-    html, body {
-      margin: 0; padding: 0;
-      width: 76.2mm;
-      background: white;
-    }
+    html, body { margin: 0; padding: 0; width: 76.2mm; background: white; }
     pre {
       margin: 0; padding: 0;
-      white-space: pre;
+      white-space: pre; /* preserve ASCII layout */
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-      line-height: 1.2;
+      font-size: 12px; line-height: 1.2;
     }
     @media screen {
       body { display: flex; justify-content: center; }
       .preview { width: 76.2mm; border: 1px dashed #ccc; }
+      .no-print { text-align:center; margin:8px 0; }
     }
     @media print {
-      .no-print { display: none !important; }
       .preview { border: 0; }
+      .no-print { display: none !important; }
     }
   </style>
 </head>
@@ -32,7 +29,7 @@
   <div class="preview">
     <pre>{{ invoice }}</pre>
   </div>
-  <div class="no-print" style="text-align:center; margin:8px 0;">
+  <div class="no-print">
     <button onclick="window.print()">Print</button>
   </div>
 </body>
