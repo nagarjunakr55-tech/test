@@ -53,13 +53,14 @@ from flask import send_file  # already imported render_template etc.
 
 from flask import render_template, request, abort
 
-# /print/<invoice_id>  → primary route
 @app.route("/print/<invoice_id>")
 def print_invoice(invoice_id):
     invoice = get_invoice_text(invoice_id)
     if not invoice:
         abort(404, f"Invoice {invoice_id} not found")
-    return render_template("print.html", invoice=invoice)
+    # Try 80 first (common for 3" drivers). If there's extra space, change to 76.2
+    return render_template("print.html", invoice=invoice, label_mm=80)
+
 
 # /print?invoice_id=INV123  → friendly fallback if someone visits /print/ without the ID
 @app.route("/print")
