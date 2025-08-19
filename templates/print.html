@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- Force layout width to actual paper width -->
+  <meta name="viewport" content="width=76.2mm, initial-scale=1, user-scalable=no">
+  <title>Print 3" Receipt</title>
+  <style>
+    /* Absolutely no margins anywhere */
+    @page { size: 76.2mm auto; margin: 0; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 76.2mm;            /* exact 3 inches */
+      background: white;
+    }
+    /* Use a condensed mono font to maximize width utilization */
+    pre {
+      margin: 0; padding: 0;
+      white-space: pre;          /* preserve your ASCII layout */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;           /* tweak if your printer renders too big/small */
+      line-height: 1.2;
+    }
+
+    /* When viewing on screen (not printing), center a bit for preview only */
+    @media screen {
+      body { display: flex; justify-content: center; }
+      .preview { width: 76.2mm; border: 1px dashed #ccc; padding: 0; }
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { display: block; }
+      .preview { border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview">
+    <pre>{{ invoice }}</pre>
+  </div>
+
+  <div class="no-print" style="margin: 8px 0; text-align:center;">
+    <button onclick="window.print()">Print</button>
+  </div>
+</body>
+</html>
