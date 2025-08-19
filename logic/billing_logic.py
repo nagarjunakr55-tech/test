@@ -153,48 +153,41 @@ _ALLOWED_PCTS = {5, 10, 15, 20, 25}
 def calculate_totals(items, discount_input: str):
     """
     items: [{price, qty, bought_price, ...}]
-    discount_input:
-      - "<number>%"  -> percentage, NO max rule
-      - "<number>"   -> flat amount, APPLY max rule: (subtotal - flat) >= (bought_total + 250)
+    discount_input: "20%" or "20" (plain number = percent)
+    MAX rule: (subtotal - discount) must be >= (bought_total + 250) else reject.
     """
     if not items:
         raise ValueError("empty_cart")
 
-    # sums
     subtotal = sum(float(i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
     bought_total = sum(float(i.get("bought_price", 0)) * int(i.get("qty", 1)) for i in items)
 
-    discount_amt = 0.0
     di = (discount_input or "").strip()
+    discount_amt = 0.0
 
-    if di.endswith("%"):
-        # percentage, no max rule
+    if di:
+        is_percent = di.endswith("%") or di.replace(".", "", 1).isdigit()
         try:
-            pct = float(di[:-1])
+            if di.endswith("%"):
+                pct = float(di[:-1])
+                discount_amt = subtotal * (pct / 100.0)
+            elif di.replace(".", "", 1).isdigit():
+                # plain number -> treat as percent
+                pct = float(di)
+                discount_amt = subtotal * (pct / 100.0)
+            else:
+                # flat amount (rare here, but supported)
+                flat = float(di)
+                discount_amt = min(flat, subtotal)
         except Exception:
             raise ValueError("invalid_discount")
-        if pct < 0 or pct > 100:
-            raise ValueError("invalid_discount")
-        discount_amt = subtotal * (pct / 100.0)
-    elif di:
-        # flat amount, apply max rule
-        try:
-            flat = float(di)
-        except Exception:
-            raise ValueError("invalid_discount")
-        if flat < 0:
-            raise ValueError("invalid_discount")
 
-        # check max rule BEFORE clamping
-        grand_after = subtotal - flat
-        if grand_after < (bought_total + 250):
+        grand_total = max(0.0, subtotal - discount_amt)
+        if grand_total < (bought_total + 250):
             raise ValueError("max_discount_reached")
-
-        discount_amt = min(flat, subtotal)  # clamp at subtotal
     else:
-        discount_amt = 0.0
+        grand_total = subtotal
 
-    grand_total = max(0.0, subtotal - discount_amt)
     gst = grand_total - (grand_total / 1.05)
 
     return {
@@ -205,85 +198,57 @@ def calculate_totals(items, discount_input: str):
     }
 
 
+
 # ---------------------------------
 # Invoice text (monospace)
 # ---------------------------------
-def generate_invoice_text(invoice_id, customer_name, customer_phone,
-                          items, subtotal, gst_amount, grand_total, discount_amt):
-    """
-    Render a strictly monospaced 3" receipt with fixed column widths:
-      No(3) Brand(20) Size(5) Qty(3) MRP(7) Price(7)  -> total row width = 45 chars
-    """
-    from datetime import datetime
-    COL_NO, COL_BRAND, COL_SIZE, COL_QTY, COL_MRP, COL_PRICE = 3, 20, 5, 3, 7, 7
-    ROW_W = COL_NO + COL_BRAND + COL_SIZE + COL_QTY + COL_MRP + COL_PRICE  # 45
-    BAR = "-" * ROW_W
-    now = datetime.now().strftime("%Y-%m-%d")
 
-    # Header
+def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
+    COLS = 42  # safe width for 3" thermal printers
+    def clamp(s, n): return (str(s)[:n]).ljust(n)
+
     lines = []
-    lines.append(BRAND_NAME.center(ROW_W))
-    lines.append(BAR)
-    # left/right within the same line
-    left = f"Invoice: {invoice_id}"
-    right = f"Date: {now}"
-    lines.append(f"{left:<{ROW_W - len(right)}}{right}")
-    lines.append(f"Customer: {customer_name} / {customer_phone}")
-    lines.append(BAR)
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    # Table header (match exact column widths)
-    lines.append(
-        f"{'No':<{COL_NO}}"
-        f"{'Brand':<{COL_BRAND}}"
-        f"{'Size':<{COL_SIZE}}"
-        f"{'Qty':>{COL_QTY}}"
-        f"{'MRP':>{COL_MRP}}"
-        f"{'Price':>{COL_PRICE}}"
-    )
-    lines.append(BAR)
+    lines.append(BRAND_NAME.center(COLS))
+    lines.append("-" * COLS)
+    # 24 + 18 = 42
+    lines.append(f"{('Invoice: ' + str(invoice_id)):<24}{('Date: ' + today):>18}")
+    cust_line = f"Customer: {customer_name} / {customer_phone}"
+    lines.append(clamp(cust_line, COLS))
+    lines.append("-" * COLS)
 
-    # Rows
+    # Headers aligned to row widths below
+    # 2,1,18,1,3,1,2,1,6,1,6  => 42
+    header = f"{'No':>2} {'Brand':<18} {'Sz':<3} {'Q':>2} {'MRP':>6} {'Price':>6}"
+    lines.append(header)
+    lines.append("-" * COLS)
+
     for idx, item in enumerate(items, start=1):
-        # Trim/normalize values
-        brand = str(item.get("brand", ""))[:COL_BRAND]
-        size = str(item.get("size", ""))[:COL_SIZE]
-        # Force numeric qty (bad values get clamped to 0)
-        try:
-            qty = int(item.get("qty", 0))
-        except Exception:
-            qty = 0
-        # Row prices: integers look better on 3" receipts
-        try:
-            mrp = int(round(float(item.get("mrp_price", 0))))
-        except Exception:
-            mrp = 0
-        try:
-            price = int(round(float(item.get("price", 0))))
-        except Exception:
-            price = 0
+        brand = clamp(item.get("brand", ""), 18)
+        size  = clamp(item.get("size", ""), 3)
+        qty   = int(item.get("qty", 1))
+        mrp   = int(float(item.get("mrp_price", 0)))
+        price = int(float(item.get("price", 0)))
 
-        lines.append(
-            f"{idx:<{COL_NO}}"
-            f"{brand:<{COL_BRAND}}"
-            f"{size:<{COL_SIZE}}"
-            f"{qty:>{COL_QTY}d}"
-            f"{mrp:>{COL_MRP}d}"
-            f"{price:>{COL_PRICE}d}"
+        row = (
+            f"{idx:>2} "          # 2 + 1
+            f"{brand}"            # 18
+            f" {size}"            # 1 + 3
+            f" {qty:>2}"          # 1 + 2
+            f" {mrp:>6}"          # 1 + 6
+            f" {price:>6}"        # 1 + 6  => total 42
         )
+        lines.append(row)
 
-    lines.append(BAR)
-
-    # Totals: keep right-aligned numeric block
-    NUM_W = 12                      # width for the number at the end
-    LABEL_W = ROW_W - NUM_W         # everything before it
-    lines.append(f"{'Subtotal':<{LABEL_W}}{subtotal:>{NUM_W}.2f}")
+    lines.append("-" * COLS)
+    lines.append(f"{'Subtotal':<20}{subtotal:>{COLS-20}.2f}")
     if discount_amt and float(discount_amt) > 0:
-        lines.append(f"{'Discount':<{LABEL_W}}{-float(discount_amt):>{NUM_W}.2f}")
-    # If you want to show GST as a line, uncomment:
-    # lines.append(f"{'GST (approx)':<{LABEL_W}}{gst_amount:>{NUM_W}.2f}")
-    lines.append(f"{'Grand Total':<{LABEL_W}}{grand_total:>{NUM_W}.2f}")
-    lines.append(BAR)
-    lines.append("Thank you for shopping with DRIP!".center(ROW_W))
+        lines.append(f"{'Discount':<20}{('-' + format(discount_amt, '.2f')):>{COLS-20}}")
+    lines.append(f"{'Grand Total':<20}{grand_total:>{COLS-20}.2f}")
+    lines.append("-" * COLS)
+    lines.append("Thank you for shopping with DRIP!".center(COLS))
+
     return "\n".join(lines)
 
 
