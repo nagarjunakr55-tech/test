@@ -4,4 +4,12 @@
   <div class="preview">
     <pre>{{ invoice }}</pre>
   </div>
+
+  <script>
+    // Open the native print dialog as soon as the page loads
+    window.addEventListener('load', function () {
+      // Calling inside load keeps it tied to the user's click navigation
+      setTimeout(function(){ window.print(); }, 0);
+    });
+  </script>
 {% endblock %}
