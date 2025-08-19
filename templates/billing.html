@@ -224,22 +224,35 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
 // - typing "25" means 25%
 // - typing "25%" also ok
 // - MAX rule enforced for ALL discounts: final >= bought_total + 250
+
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
-  if (!raw){ appliedDiscount=""; recalc(); invalidateCheckout(); return; }
-
-  // normalize plain number to percent
-  if (!/%\s*$/.test(raw)) {
-    const n = parseFloat(raw);
-    if (isNaN(n) || n < 0) { alert('Invalid discount.'); return; }
-    raw = `${n}%`;
+  if (!raw){ 
+    appliedDiscount = ""; 
+    recalc(); 
+    invalidateCheckout(); 
+    return; 
   }
 
-  // test MAX rule before storing
+  // Normalize to percent value
+  let pct;
+  if (raw.endsWith('%')) {
+    pct = parseFloat(raw.slice(0,-1));
+  } else {
+    pct = parseFloat(raw);
+  }
+
+  // Only allow 10, 15, 20, 25
+  const ALLOWED = new Set([10,15,20,25]);
+  if (isNaN(pct) || !ALLOWED.has(pct)) {
+    alert('Invalid Code');
+    return;
+  }
+
+  // Enforce MAX rule before applying
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
-  const pct = parseFloat(raw);
-  let discountAmt = subtotalLocal * (pct/100.0);
+  const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
 
   if (finalCandidate < (boughtTotal + 250)) {
@@ -247,9 +260,13 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     return; // do not apply
   }
 
-  appliedDiscount = raw;
-  recalc(); invalidateCheckout();
+  // Store normalized percent (e.g., "15%")
+  appliedDiscount = `${pct}%`;
+  recalc(); 
+  invalidateCheckout();
 });
+
+
 
 // ---------- Barcode (manual) ----------
 async function addBarcode() {

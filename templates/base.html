@@ -29,11 +29,25 @@
     .row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .row>*{ min-width:0; } .grow{ flex:1 1 0; } .nowrap{ white-space:nowrap; }
 
-    button,.btn{ padding:12px 16px; border:none; border-radius:var(--radius); background:var(--accent);
-      color:#fff; cursor:pointer; text-decoration:none; display:inline-block; box-shadow:0 1px 0 rgba(0,0,0,.05); }
-    button:hover,.btn:hover{ filter:brightness(.95); }
-    .btn-green{ background:var(--accent-2); } .btn-warn{ background:var(--warn); } .btn-muted{ background:var(--muted); }
-    .btn-link{ background:transparent; color:#0366d6; padding:0; border-radius:0; }
+    /* Buttons (smaller, mobile-friendly) */
+button, .btn{
+  padding: 8px 12px;       /* was 12px 16px */
+  border: none;
+  border-radius: 8px;      /* was 10px */
+  background: var(--accent);
+  color:#fff;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  box-shadow: 0 1px 0 rgba(0,0,0,.05);
+  font-size: 15px;         /* was 16px */
+}
+button:hover, .btn:hover{ filter: brightness(.95); }
+.btn-green{ background: var(--accent-2); }
+.btn-warn { background: var(--warn); }
+.btn-muted{ background: var(--muted); }
+.btn-link { background: transparent; color:#0366d6; padding:0; border-radius:0; }
+
 
     input,select,textarea{ width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:16px; background:#fff; }
     .input-sm{ width:120px !important; flex:0 0 120px !important; }
@@ -46,9 +60,26 @@
     table{ width:100%; border-collapse:collapse; background:#fff; }
     th,td{ padding:10px; border-bottom:1px solid var(--border); text-align:left; }
     thead th{ background:#f6f6f6; }
+/* Tiny action buttons inside the cart table */
+#cartTable button{
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 6px;
+  min-width: 0;           /* prevent stretching */
+}
 
-    @media (max-width:600px){ header h2{ font-size:18px; } nav a{ padding:6px 8px; }
-      button,.btn{ width:100%; } th,td{ padding:8px; } }
+    @media (max-width:600px){
+  header h2{ font-size:18px; }
+  nav a{ padding:6px 8px; }
+  /* smaller buttons on phones, but not full-width */
+  button, .btn{
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+  th, td{ padding:8px; }
+}
+
 
     @media print{ header,nav,.no-print{ display:none !important; } body{ margin:0; background:#fff; } .container{ padding:0; } }
 
