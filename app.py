@@ -28,7 +28,8 @@ def billing():
 
         save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice)
 
-        return render_template("invoice.html", invoice=invoice)
+        return render_template("invoice.html", invoice=invoice, invoice_id=invoice_id)
+
 
     return render_template("billing.html")
 
@@ -48,12 +49,15 @@ def reprint(invoice_id):
 from flask import Flask, render_template, request, redirect, url_for
 # ...existing imports...
 
+from flask import send_file  # already imported render_template etc.
+
 @app.route("/print/<invoice_id>")
 def print_invoice(invoice_id):
     invoice = get_invoice_text(invoice_id)
     if not invoice:
         return f"Invoice {invoice_id} not found", 404
     return render_template("print.html", invoice=invoice)
+
 
 # app.py (add this)
 from io import BytesIO
