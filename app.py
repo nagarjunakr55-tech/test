@@ -51,12 +51,27 @@ from flask import Flask, render_template, request, redirect, url_for
 
 from flask import send_file  # already imported render_template etc.
 
+from flask import render_template, request, abort
+
+# /print/<invoice_id>  → primary route
 @app.route("/print/<invoice_id>")
 def print_invoice(invoice_id):
     invoice = get_invoice_text(invoice_id)
     if not invoice:
-        return f"Invoice {invoice_id} not found", 404
+        abort(404, f"Invoice {invoice_id} not found")
     return render_template("print.html", invoice=invoice)
+
+# /print?invoice_id=INV123  → friendly fallback if someone visits /print/ without the ID
+@app.route("/print")
+def print_invoice_query():
+    invoice_id = request.args.get("invoice_id", "").strip()
+    if not invoice_id:
+        abort(404, "Missing ?invoice_id=... in URL")
+    invoice = get_invoice_text(invoice_id)
+    if not invoice:
+        abort(404, f"Invoice {invoice_id} not found")
+    return render_template("print.html", invoice=invoice)
+
 
 
 # app.py (add this)
