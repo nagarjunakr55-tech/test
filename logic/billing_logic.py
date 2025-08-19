@@ -223,16 +223,35 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines = []
     today = datetime.now().strftime("%Y-%m-%d")
 
-    lines.append(BRAND_NAME.center(COLS))
+    # --- Header (shop name + address, centered) ---
+    header = [
+        "DRIP",
+        "",
+        "#6-2-52,",
+        "D L Road, Hindupur,",
+        "Satya Sai (D), AP-515201",
+        "Phone: 8106204688"
+      
+    ]
+    
+    for s in header:
+        lines.append(s.center(COLS))
+
+    
+
     lines.append("-" * COLS)
-    # Left/Right info line
+
+    # --- Left/Right info line (unchanged) ---
+    today = datetime.now().strftime("%Y-%m-%d")
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
-    # Customer line
+
+    # --- Customer line (unchanged) ---
     cust_line = f"Customer: {customer_name} / {customer_phone}"
     lines.append(clamp(cust_line, COLS))
     lines.append("-" * COLS)
+
 
     # Header (kept explicit so "Price" doesn't get cut)
     header = (
@@ -269,6 +288,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         lines.append(f"{'Discount':<18}{('-' + format(discount_amt, '.2f')).rjust(COLS-18)}")
     lines.append(f"{'Grand Total':<18}{format(grand_total, '.2f').rjust(COLS-18)}")
     lines.append("-" * COLS)
+
     lines.append("Thank you for shopping with DRIP!".center(COLS))
 
     return "\n".join(lines)
