@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Billing</h2>
 
-<!-- Top-right utility link to show manual add -->
+<!-- Toggle manual add (hidden by default) -->
 <div class="row" style="justify-content:flex-end; margin-bottom:6px;">
   <button id="btnToggleManual" class="btn-link">Add item manually</button>
 </div>
@@ -14,17 +14,17 @@
 
   <label for="custPhone" class="nowrap">Phone</label>
   <input id="custPhone" class="grow" type="tel" inputmode="numeric" pattern="[0-9]*"
-         placeholder="10 digits" maxlength="10" autocomplete="tel"value="9848022338">
+         placeholder="10 digits" maxlength="10" autocomplete="tel">
 </div>
 
-<!-- Barcode (manual input only) -->
+<!-- Barcode -->
 <div class="row" style="margin-top:10px;">
   <label for="barcode" class="nowrap">Barcode</label>
-  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Enter Barcode" autocomplete="off">
+  <input id="barcode" class="grow" type="text" inputmode="decimal" placeholder="Scan barcode then press Enter" autocomplete="off">
   <button id="btnBarcode">Add</button>
 </div>
 
-<!-- MANUAL add area (hidden by default) -->
+<!-- Manual add area -->
 <div id="manualBox" style="display:none; margin-top:10px;">
   <div class="row" style="margin-top:4px;">
     <input id="mBrand" type="text" placeholder="Brand" class="grow" style="min-width:160px;">
@@ -58,7 +58,7 @@
   </div>
 </div>
 
-<!-- Cart table -->
+<!-- Cart -->
 <div class="table-responsive" style="margin-top:12px;">
   <table id="cartTable">
     <thead>
@@ -69,7 +69,6 @@
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
         <th style="text-align:right;">SP Price</th>
-        
         <th style="text-align:center;"></th>
       </tr>
     </thead>
@@ -78,35 +77,17 @@
 </div>
 
 <!-- Totals + discount -->
-<div class="row" style="margin-top:10px;">
+<div class="row actions" style="margin-top:10px;">
   <label for="discount" class="nowrap">Discount</label>
-  <input id="discount" class="input-sm"  autocomplete="off" inputmode="decimal">
-  <button id="applyDiscount">Discount</button>
+  <input id="discount" class="input-sm" placeholder="10 / 15 / 20 / 25" style="width:90px;" autocomplete="off" inputmode="decimal">
+  <button id="applyDiscount">Apply</button>
 
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
   <button id="btnProceed" class="btn-green">Proceed</button>
-  <a id="btnPrint" 
-   href="#"
-   target="_blank" 
-   rel="noopener"
-   style="
-     display:inline-block;
-     padding:8px 16px;
-     border-radius:6px;
-     background:#ccc;
-     color:#666;
-     text-decoration:none;
-     font-weight:500;
-     pointer-events:none;
-     opacity:.5;
-     cursor:not-allowed;
-   ">
-   Print
-</a>
-
-  <button id="btnClear" class="btn-warn">Clear</button>
+  <button id="btnPrint" class="btn-muted" style="pointer-events:none; opacity:.5;">Print</button>
+  <button id="btnClear" class="btn-warn">Clear Cart</button>
 </div>
 
 <!-- Invoice preview -->
@@ -114,14 +95,14 @@
 <pre id="invoicePreview" style="background:#fff;"></pre>
 
 <script>
-// ---------- Toggle MANUAL add ----------
+/* -------------------- UI Toggle -------------------- */
 document.getElementById('btnToggleManual').addEventListener('click', (e)=>{
   e.preventDefault();
   const box = document.getElementById('manualBox');
   box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
 });
 
-// ---------- Sizes ----------
+/* -------------------- Sizes -------------------- */
 const mSize = document.getElementById('mSize');
 const mCategory = document.getElementById('mCategory');
 function refreshSizes() {
@@ -132,37 +113,53 @@ function refreshSizes() {
 mCategory.addEventListener('change', refreshSizes);
 refreshSizes();
 
-// ---------- State ----------
+/* -------------------- State -------------------- */
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 let lastInvoiceId = null;
-let appliedDiscount = "";  // store as "NN%" or "NN"
+let appliedDiscount = "";  // "10%", "15%", etc.
+let hydrating = false;     // prevents invalidation during restore
 
-// ---------- Helpers ----------
 function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
-function sameKey(a,b){
-  return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
-}
-function upsertCartItem(newItem){
-  const i = cart.findIndex(it => sameKey(it, newItem));
-  if (i >= 0) cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
-  else cart.push(newItem);
-  renderCart();
-}
+function sameKey(a,b){ return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price); }
 function setPrintEnabled(on){
   const btn = document.getElementById('btnPrint');
   btn.style.pointerEvents = on ? 'auto' : 'none';
   btn.style.opacity = on ? '1' : '.5';
 }
-function invalidateCheckout() {
-  lastInvoiceId = null;
-  setPrintEnabled(false);
-  const btn = document.getElementById('btnProceed');
-  btn.disabled = false;
-  btn.textContent = 'Proceed';
+
+/* ---- Persistence ---- */
+function saveState(){
+  const state = {
+    cart,
+    appliedDiscount,
+    lastInvoiceId,
+    custName: document.getElementById('custName').value || '',
+    custPhone: document.getElementById('custPhone').value || '',
+    invoiceText: document.getElementById('invoicePreview').textContent || ''
+  };
+  sessionStorage.setItem('billing_state', JSON.stringify(state));
+}
+function loadState(){
+  const raw = sessionStorage.getItem('billing_state');
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    hydrating = true;
+    cart = Array.isArray(s.cart) ? s.cart : [];
+    appliedDiscount = s.appliedDiscount || "";
+    lastInvoiceId = s.lastInvoiceId || null;
+    document.getElementById('custName').value = s.custName || 'Guest';
+    document.getElementById('custPhone').value = s.custPhone || '';
+    document.getElementById('invoicePreview').textContent = s.invoiceText || '';
+    renderCart();
+    hydrating = false;
+    if (lastInvoiceId) setPrintEnabled(true);
+    recalc();
+  } catch {}
 }
 
-// ---------- Totals ----------
+/* -------------------- Totals -------------------- */
 function recalc() {
   subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
@@ -170,26 +167,22 @@ function recalc() {
 
   let discountAmt = 0;
   if (appliedDiscount) {
-    if (/%\s*$/.test(appliedDiscount)) {
-      const pct = parseFloat(appliedDiscount);
-      if (!isNaN(pct) && pct >= 0) discountAmt = subtotal * (pct/100.0);
-    } else {
-      const flat = parseFloat(appliedDiscount);
-      if (!isNaN(flat) && flat >= 0) discountAmt = Math.min(flat, subtotal);
-    }
-    // Enforce MAX rule for all discounts
-    const finalCandidate = subtotal - discountAmt;
-    if (finalCandidate < (boughtTotal + 250)) {
-      // do not apply if threshold broken
-      discountAmt = 0;
+    // percent only (client side we only store NN%)
+    const pct = parseFloat(appliedDiscount);
+    if (!isNaN(pct) && pct >= 0) {
+      discountAmt = subtotal * (pct/100.0);
+      // Enforce MAX rule client-side mirror
+      const finalCandidate = subtotal - discountAmt;
+      if (finalCandidate < (boughtTotal + 250)) {
+        discountAmt = 0; // do not apply visually
+      }
     }
   }
-
   finalTotal = Math.max(0, subtotal - discountAmt);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
 
-// ---------- Cart rendering ----------
+/* -------------------- Cart rendering -------------------- */
 function renderCart() {
   const tb = document.querySelector('#cartTable tbody'); tb.innerHTML = '';
   cart.forEach((it, idx) => {
@@ -205,13 +198,19 @@ function renderCart() {
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
       <td style="text-align:right;">${Number(it.price||0).toFixed(2)}</td>
-      
       <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
   });
   recalc();
-  invalidateCheckout();  // any cart/discount change cancels previous proceed
+  if (!hydrating) {
+    // Any change cancels prior proceed
+    lastInvoiceId = null;
+    setPrintEnabled(false);
+    const btn = document.getElementById('btnProceed');
+    btn.disabled = false; btn.textContent = 'Proceed';
+  }
+  saveState();
 }
 document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const btn = e.target; const act = btn.getAttribute('data-act'); const i = +btn.getAttribute('data-i');
@@ -220,55 +219,31 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
   if (act === 'remove'){ cart.splice(i,1); renderCart(); }
 });
 
-// ---------- Apply Discount ----------
-// - typing "25" means 25%
-// - typing "25%" also ok
-// - MAX rule enforced for ALL discounts: final >= bought_total + 250
-
+/* -------------------- Discount (only 10/15/20/25) -------------------- */
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
-  if (!raw){ 
-    appliedDiscount = ""; 
-    recalc(); 
-    invalidateCheckout(); 
-    return; 
-  }
+  if (!raw){ appliedDiscount = ""; recalc(); saveState(); return; }
 
-  // Normalize to percent value
-  let pct;
-  if (raw.endsWith('%')) {
-    pct = parseFloat(raw.slice(0,-1));
-  } else {
-    pct = parseFloat(raw);
-  }
-
-  // Only allow 10, 15, 20, 25
+  let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25]);
-  if (isNaN(pct) || !ALLOWED.has(pct)) {
-    alert('Invalid Code');
-    return;
-  }
+  if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid discount. Allowed: 10, 15, 20, 25'); return; }
 
-  // Enforce MAX rule before applying
+  // Client-side check of MAX rule
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
+  if (finalCandidate < (boughtTotal + 250)) { alert('Maximum discount reached.'); return; }
 
-  if (finalCandidate < (boughtTotal + 250)) {
-    alert('Maximum discount reached.');
-    return; // do not apply
-  }
-
-  // Store normalized percent (e.g., "15%")
   appliedDiscount = `${pct}%`;
-  recalc(); 
-  invalidateCheckout();
+  recalc();
+  // Any discount change invalidates previous proceed
+  lastInvoiceId = null; setPrintEnabled(false);
+  const btn = document.getElementById('btnProceed'); btn.disabled = false; btn.textContent = 'Proceed';
+  saveState();
 });
 
-
-
-// ---------- Barcode (manual) ----------
+/* -------------------- Barcode -------------------- */
 async function addBarcode() {
   const code = document.getElementById('barcode').value.trim();
   document.getElementById('barcode').value = '';
@@ -286,7 +261,7 @@ async function addBarcode() {
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
 document.getElementById('btnBarcode').addEventListener('click', addBarcode);
 
-// ---------- Manual add ----------
+/* -------------------- Manual add -------------------- */
 document.getElementById('btnAdd').addEventListener('click', ()=>{
   const brand = document.getElementById('mBrand').value.trim();
   const price = parseFloat(document.getElementById('mPrice').value||0);
@@ -298,7 +273,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 
-// ---------- Search modal ----------
+/* -------------------- Search modal -------------------- */
 document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
 document.getElementById('sClose').addEventListener('click', ()=> document.getElementById('searchModal').style.display='none');
 document.getElementById('sGo').addEventListener('click', async ()=>{
@@ -318,7 +293,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   });
 });
 
-// ---------- Autofill name by phone ----------
+/* -------------------- Autofill name by phone -------------------- */
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
   const ph = e.target.value.replace(/\D/g,'').slice(0,10); e.target.value = ph;
   if (ph.length === 10) {
@@ -327,7 +302,7 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
   }
 });
 
-// ---------- Proceed (save + preview) ----------
+/* -------------------- Proceed (save + preview) -------------------- */
 const proceedBtn = document.getElementById('btnProceed');
 proceedBtn.addEventListener('click', async ()=>{
   if (proceedBtn.disabled) return;
@@ -348,7 +323,7 @@ proceedBtn.addEventListener('click', async ()=>{
         bought_price: Number(i.bought_price||0),
         price: Number(i.price||0)
       })),
-      discount: appliedDiscount  // "NN%" or "NN"
+      discount: appliedDiscount  // "NN%"
     };
     const res = await fetch('{{ url_for("api_checkout") }}', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const j = await res.json();
@@ -356,27 +331,41 @@ proceedBtn.addEventListener('click', async ()=>{
 
     lastInvoiceId = j.invoice_id;
     document.getElementById('invoicePreview').textContent = j.invoice_text;
-    const printBtn = document.getElementById('btnPrint');
-    printBtn.href = '{{ url_for("print_invoice", invoice_id="__ID__") }}'.replace('__ID__', lastInvoiceId);
     setPrintEnabled(true);
     proceedBtn.textContent = 'Proceeded';
+    saveState();  // persist invoice + id
   } catch {
     alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
   }
 });
 
-// ---------- Print guard ----------
+/* -------------------- Print (open new tab + auto-close) -------------------- */
 document.getElementById('btnPrint').addEventListener('click', (e)=>{
-  if (!lastInvoiceId) { e.preventDefault(); alert('Please click Proceed first.'); }
+  e.preventDefault();
+  if (!lastInvoiceId) { alert('Please click Proceed first.'); return; }
+  saveState();  // ensure latest state is persisted before leaving focus
+  const url = '{{ url_for("print_invoice", invoice_id="__ID__") }}'
+                .replace('__ID__', lastInvoiceId)
+              + '?ret={{ url_for("billing") }}';
+  window.open(url, '_blank', 'noopener,noreferrer'); // billing stays open
 });
 
-// ---------- Clear ----------
+/* -------------------- Clear -------------------- */
 document.getElementById('btnClear').addEventListener('click', ()=>{
-  cart = []; renderCart(); document.getElementById('discount').value = ''; appliedDiscount = "";
-  document.getElementById('invoicePreview').textContent = ''; lastInvoiceId = null; setPrintEnabled(false);
+  cart = []; renderCart();
+  document.getElementById('discount').value = '';
+  appliedDiscount = "";
+  document.getElementById('invoicePreview').textContent = '';
+  lastInvoiceId = null; setPrintEnabled(false);
+  saveState();
 });
 
-// ---------- Init ----------
-(function init(){ renderCart(); })();
+/* -------------------- Barcode & Manual triggers -------------------- */
+document.getElementById('btnBarcode').addEventListener('click', addBarcode);
+document.getElementById('btnAdd').addEventListener('click', ()=>{});    // already bound above
+document.getElementById('btnSearch').addEventListener('click', ()=>{}); // already bound above
+
+/* -------------------- Init -------------------- */
+(function init(){ loadState(); if (!cart.length) renderCart(); })();
 </script>
 {% endblock %}
