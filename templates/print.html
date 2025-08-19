@@ -1,15 +1,35 @@
 {% extends "base.html" %}
 {% set body_class = "is-print" %}
 {% block content %}
+
+  {# ---- Adjustable label width (in millimeters) ---- #}
+  {# Pass label_mm from Flask: render_template("print.html", invoice=..., label_mm=80) #}
+  {% set label_mm = (label_mm or 80) %}
+
+  <style>
+    /* Fill the phone screen on preview */
+    .preview { width: 100vw; max-width: 100vw; margin: 0; }
+    pre { margin: 0; padding: 8px; font-size: 18px; line-height: 1.3; }
+
+    /* Exact physical width + zero margins when printing */
+    @media print {
+      @page { size: {{ label_mm }}mm auto; margin: 0; }
+      html, body, .container, .preview, pre {
+        width: {{ label_mm }}mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      pre { font-size: 12px; line-height: 1.2; border: 0; }
+      header, nav, .no-print { display: none !important; }
+    }
+  </style>
+
   <div class="preview">
     <pre>{{ invoice }}</pre>
   </div>
 
   <script>
-    // Open the native print dialog as soon as the page loads
-    window.addEventListener('load', function () {
-      // Calling inside load keeps it tied to the user's click navigation
-      setTimeout(function(){ window.print(); }, 0);
-    });
+    // Auto-open native print dialog on page load
+    addEventListener('load', () => setTimeout(() => print(), 0));
   </script>
 {% endblock %}
