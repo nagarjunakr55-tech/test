@@ -19,6 +19,9 @@ from logic.billing_logic import (
 
 
 from db import get_connection
+from labels import labels_bp
+
+
 
 
 
@@ -28,6 +31,9 @@ def create_app() -> Flask:
     log = logging.getLogger("drip")
 
     app = Flask(__name__)
+    
+    app.register_blueprint(labels_bp)
+
     log.info("Boot: Flask app created")
 
     # --- Quick DB sanity on boot (non-fatal) ---
