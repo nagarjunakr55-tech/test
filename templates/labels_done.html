@@ -15,9 +15,13 @@
   <a class="btn" href="{{ url_for('labels.print_png_page', code=code) }}" target="_blank">
   Print on Android (PNG)
 </a>
-<a class="btn" href="tspl://print?code={{ code }}&copies={{ copies|default(1) }}&base={{ request.url_root|trim('/') }}" >
+<a class="btn"
+   href="tspl://print?base={{ request.url_root|trim('/')|urlencode }}
+                     &code={{ code|urlencode }}
+                     &copies={{ copies|default(1) }}">
   Print via Android (Bluetooth)
 </a>
+
 
 
   <a class="btn" href="{{ url_for('labels.page') }}">Back</a>
