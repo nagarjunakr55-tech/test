@@ -9,13 +9,31 @@
   <meta name="format-detection" content="telephone=no,email=no,address=no" />
 
   <style>
-    nav{ margin-top:8px; display:flex; gap:12px; flex-wrap:wrap; }
-nav a{ color:#fff; text-decoration:none; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.15); }
+    nav{
+  margin-top:8px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:nowrap;              
+  overflow-x:auto;               
+  -webkit-overflow-scrolling:touch;
+  white-space:nowrap;
+}
+nav a{
+  color:#fff;
+  text-decoration:none;
+  padding:6px 8px;               
+  border-radius:8px;
+  background:rgba(255,255,255,.15);
+  flex:0 0 auto;                 
+}
 nav a:hover{ background:rgba(255,255,255,.25); }
+nav .spacer{ flex:1 1 auto; }
 /* logout link floats to the right side of nav */
-nav a.logout {
-  margin-left: auto;
-  background: var(--warn);   /* orange-red */
+nav a.logout{ background:var(--warn); }
+@media (max-width:600px){
+  nav{ gap:6px; }
+  nav a{ padding:6px 8px; font-size:14px; }
 }
 
     :root{
