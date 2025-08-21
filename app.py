@@ -17,12 +17,8 @@ from logic.billing_logic import (
     calculate_totals,
 )
 
-
 from db import get_connection
 from labels import labels_bp
-
-
-
 
 
 def create_app() -> Flask:
@@ -31,8 +27,33 @@ def create_app() -> Flask:
     log = logging.getLogger("drip")
 
     app = Flask(__name__)
-    
+
+    # --- Blueprints ---
     app.register_blueprint(labels_bp)
+
+    # --- Debug helpers (keep ONE version) ---
+    @app.get("/__routes")
+    def __routes():
+        return {"routes": [
+            {"rule": r.rule, "endpoint": r.endpoint}
+            for r in app.url_map.iter_rules()
+        ]}
+
+    @app.get("/__endpoint/<path:endpoint>")
+    def __endpoint_locator(endpoint):
+        from flask import abort
+        view = app.view_functions.get(endpoint)
+        if not view:
+            abort(404, f"No endpoint named {endpoint!r}")
+        import inspect
+        file = inspect.getsourcefile(view)
+        line = inspect.getsourcelines(view)[1]
+        return {
+            "endpoint": endpoint,
+            "file": file,
+            "line": line,
+            "qualname": getattr(view, "__qualname__", view.__name__),
+        }
 
     log.info("Boot: Flask app created")
 
@@ -162,7 +183,6 @@ def create_app() -> Flask:
             abort(404, f"Invoice {invoice_id} not found")
         return render_template("print.html", invoice=invoice, label_mm=100)
 
-
     @app.route("/print")
     def print_invoice_query():
         invoice_id = (request.args.get("invoice_id") or "").strip()
@@ -200,7 +220,6 @@ def create_app() -> Flask:
     def health():
         return {"ok": True}, 200
 
-        
     @app.post("/api/search_products")
     def api_search_products():
         data = request.get_json(silent=True) or {}
@@ -277,11 +296,14 @@ def create_app() -> Flask:
     return app
 
 
-app = create_app()
-import auth_init
-
-
+# --- Dev server entrypoint ---
 if __name__ == "__main__":
-    print("Starting dev server on http://127.0.0.1:5000 …")
-    # Run unbuffered so logs show immediately
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # If auth_init is needed for side-effects, import here
+    try:
+        import auth_init  # noqa: F401
+    except Exception:
+        pass
+
+    app = create_app()
+    print("Starting dev server on http://127.0.0.1:5001 …")
+    app.run(host="0.0.0.0", port=5001, debug=True)

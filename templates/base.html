@@ -131,6 +131,8 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <a href="{{ url_for('labels.page') }}">Barcodes</a>
 
 
+
+
   {% if session.get('user') %}
   <a href="{{ url_for('auth.logout') }}" class="logout">
     Logout

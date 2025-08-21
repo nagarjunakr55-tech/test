@@ -11,10 +11,12 @@
 <img src="{{ url_for('static', filename=rel_img) }}" alt="barcode" style="border:1px solid #eee;">
 
 <div style="margin-top:10px;">
-  <a class="btn" href="{{ url_for('labels.tspl_download', code=code) }}">Download TSPL</a>
-  <a class="btn" href="{{ url_for('labels.print_png_page', code=code) }}" target="_blank">
+  <a class="btn" href="{{ url_for('labels.tspl_for_code', code=code) }}">Download TSPL</a>
+
+  <a class="btn" href="{{ url_for('static', filename=rel_img) }}" target="_blank">
   Print on Android (PNG)
 </a>
+
 <a class="btn"
    href="tspl://print?base={{ request.url_root|trim('/')|urlencode }}
                      &code={{ code|urlencode }}
@@ -24,7 +26,8 @@
 
 
 
-  <a class="btn" href="{{ url_for('labels.page') }}">Back</a>
+  <a class="btn" href="{{ url_for('billing') }}">Back</a>
+
 </div>
 
 <h3>TSPL (for thermal printers)</h3>
