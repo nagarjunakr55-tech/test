@@ -295,6 +295,8 @@ def create_app() -> Flask:
 
     return app
 
+app = create_app()    
+
 
 # --- Dev server entrypoint ---
 if __name__ == "__main__":
@@ -304,6 +306,5 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    app = create_app()
     print("Starting dev server on http://127.0.0.1:5001 …")
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
