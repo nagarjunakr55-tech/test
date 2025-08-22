@@ -2,11 +2,28 @@
 {% block content %}
 <h2>Invoice History</h2>
 
-<form method="post" style="margin-bottom:15px;">
-    <input type="text" name="search" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
-    <button type="submit">Search</button>
-    <a href="{{ url_for('history') }}" class="btn">Clear</a>
+<form method="post" action="{{ url_for('history') }}" style="margin-bottom:15px;">
+  <input type="text" name="search" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
+  <button type="submit">Search</button>
+  <a href="{{ url_for('history') }}" class="btn">Clear</a>
 </form>
+
+<!-- Admin login/logout -->
+<div style="margin:10px 0;">
+  {% if is_admin %}
+    <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline;">
+      <button class="btn" type="submit">Logout Admin</button>
+    </form>
+  {% else %}
+    <form method="post" action="{{ url_for('admin_login') }}" style="display:inline; gap:6px;">
+      <input type="password" name="pin" placeholder="Admin PIN" style="padding:6px;">
+      <button class="btn" type="submit">Login Admin</button>
+    </form>
+    {% if request.args.get('err') == 'badpin' %}
+      <span style="color:#d32f2f; margin-left:8px;">Invalid PIN</span>
+    {% endif %}
+  {% endif %}
+</div>
 
 <div class="table-responsive">
   <table>
@@ -18,17 +35,39 @@
         <th>Date</th>
         <th>Grand Total</th>
         <th>Action</th>
+        {% if is_admin %}<th>Admin</th>{% endif %}
       </tr>
     </thead>
     <tbody>
     {% for row in rows %}
+      {# row mapping based on your existing get_invoices() output: 
+         0=invoice_id, 1=customer, 2=phone, 3=date, 4=grand_total #}
       <tr>
         <td>{{ row[0] }}</td>
         <td>{{ row[1] }}</td>
         <td>{{ row[2] }}</td>
         <td>{{ row[3] }}</td>
-        <td>₹{{ "%.2f"|format(row[4]) }}</td>
-        <td><a class="btn" href="{{ url_for('reprint', invoice_id=row[0]) }}">Reprint</a></td>
+        <td>
+          {% if is_admin %}
+            <form method="post" action="{{ url_for('invoices_update_total', invoice_id=row[0]) }}" style="display:flex; gap:6px; align-items:center;">
+              <input type="number" step="0.01" name="grand_total" value="{{ "%.2f"|format(row[4]) }}" style="width:120px; padding:4px;">
+              <button class="btn" type="submit">Save</button>
+            </form>
+          {% else %}
+            ₹{{ "%.2f"|format(row[4]) }}
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn" href="{{ url_for('reprint', invoice_id=row[0]) }}">Reprint</a>
+        </td>
+
+        {% if is_admin %}
+          <td>
+            <form method="post" action="{{ url_for('invoices_delete', invoice_id=row[0]) }}" onsubmit="return confirm('Delete invoice {{ row[0] }}?');" style="display:inline;">
+              <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
+            </form>
+          </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
