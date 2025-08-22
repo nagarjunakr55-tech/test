@@ -2,7 +2,9 @@
 import os
 import json
 import logging
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
+from flask import (
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session
+)
 
 from logic.billing_logic import (
     ensure_tables,
@@ -27,6 +29,61 @@ def create_app() -> Flask:
     log = logging.getLogger("drip")
 
     app = Flask(__name__)
+    app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+
+    # --- Admin helpers (PIN-based; minimal just for History page) ---
+    def is_admin() -> bool:
+        return session.get("is_admin") is True
+
+    def require_admin():
+        if not is_admin():
+            abort(403, "Admin only")
+
+    @app.context_processor
+    def inject_admin():
+        # makes `is_admin` available in Jinja templates
+        return {"is_admin": is_admin()}
+
+    @app.post("/admin/login")
+    def admin_login():
+        pin = (request.form.get("pin") or "").strip()
+        expected = os.getenv("ADMIN_PIN", "1234")
+        if pin == expected:
+            session["is_admin"] = True
+            return redirect(url_for("history"))
+        # back to /history with error flag so template can show "Invalid PIN"
+        return redirect(url_for("history", err="badpin"))
+
+    @app.post("/admin/logout")
+    def admin_logout():
+        session.pop("is_admin", None)
+        return redirect(url_for("history"))
+
+    # Admin actions used by history.html
+    @app.post("/invoices/<invoice_id>/update_total")
+    def invoices_update_total(invoice_id):
+        require_admin()
+        try:
+            new_total = float((request.form.get("grand_total") or "").strip())
+        except ValueError:
+            return redirect(url_for("history", err="badtotal"))
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE invoices SET grand_total=%s WHERE invoice_id=%s",
+                    (new_total, invoice_id),
+                )
+            conn.commit()
+        return redirect(url_for("history"))
+
+    @app.post("/invoices/<invoice_id>/delete")
+    def invoices_delete(invoice_id):
+        require_admin()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM invoices WHERE invoice_id=%s", (invoice_id,))
+            conn.commit()
+        return redirect(url_for("history"))
 
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
@@ -41,7 +98,6 @@ def create_app() -> Flask:
 
     @app.get("/__endpoint/<path:endpoint>")
     def __endpoint_locator(endpoint):
-        from flask import abort
         view = app.view_functions.get(endpoint)
         if not view:
             abort(404, f"No endpoint named {endpoint!r}")
@@ -295,12 +351,11 @@ def create_app() -> Flask:
 
     return app
 
-app = create_app()    
 
+app = create_app()
 
 # --- Dev server entrypoint ---
 if __name__ == "__main__":
-    # If auth_init is needed for side-effects, import here
     try:
         import auth_init  # noqa: F401
     except Exception:

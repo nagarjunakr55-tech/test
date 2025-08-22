@@ -84,6 +84,7 @@ def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
 
 
 
+
 def insert_code(brand, size, category, mrp, bought, sp, code: str) -> None:
     sql = """
     INSERT INTO barcode_catalog
