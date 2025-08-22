@@ -8,9 +8,10 @@
 <ul>
   <li>
     <a class="btn"
-       href="tspl://print?base={{ base|urlencode }}&code=PING&copies=1">
-      Print PING (Android app)
-    </a>
+   href="tspl://print?base={{ request.host_url|trim('/')|urlencode }}&code={{ code|urlencode }}&copies={{ copies|default(1) }}">
+  Print via Android (Bluetooth)
+</a>
+
   </li>
   <li>
     <a class="btn"
