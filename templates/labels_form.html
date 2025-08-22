@@ -2,30 +2,63 @@
 {% block content %}
 <h2>Barcode Generator</h2>
 
-<form method="post" action="{{ url_for('labels.create') }}" style="max-width:720px">
-  <div style="display:flex; gap:8px; margin-bottom:8px;">
-    <input name="brand"   placeholder="Brand" style="flex:1" required>
-    <input name="mrp"     placeholder="MRP" style="width:120px">
-    <input name="bought"  placeholder="Bought" style="width:120px">
-    <input name="sp"      placeholder="SP Price" style="width:120px">
-  </div>
+<style>
+  .form-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; /* brand bigger on desktop */
+    gap: 8px;
+    max-width: 960px;
+  }
+  .form-row { margin-bottom: 10px; }
+  .form-grid input, .form-grid select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    font-size: 16px;
+  }
+  /* Mobile: stack nicer */
+  @media (max-width: 640px) {
+    .form-grid {
+      grid-template-columns: 1fr 1fr; /* two per row on small screens */
+    }
+    .brand { grid-column: 1 / span 2; }  /* brand full width on mobile */
+  }
+</style>
 
-  <div style="display:flex; gap:8px; margin-bottom:8px;">
-    <select name="size" required style="width:140px">
+<form method="post" action="{{ url_for('labels.create') }}">
+  <div class="form-row form-grid">
+    <input class="brand" name="brand" placeholder="Brand" required
+           enterkeyhint="next" autocomplete="off" />
+    <input name="mrp"    placeholder="MRP"
+           type="text" inputmode="decimal" pattern="[0-9]*"
+           enterkeyhint="next" autocomplete="off" />
+    <input name="bought" placeholder="Bought"
+           type="text" inputmode="decimal" pattern="[0-9]*"
+           enterkeyhint="next" autocomplete="off" />
+    <input name="sp"     placeholder="SP Price"
+           type="text" inputmode="decimal" pattern="[0-9]*"
+           enterkeyhint="next" autocomplete="off" />
+
+    <select name="size" required enterkeyhint="next">
       <option value="">Size…</option>
       <option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option>
-      <option>28</option><option>30</option><option>32</option><option>34</option><option>36</option><option>38</option><option>40</option><option>42</option>
+      <option>28</option><option>30</option><option>32</option><option>34</option>
+      <option>36</option><option>38</option><option>40</option><option>42</option>
     </select>
 
-    <select name="category" required style="width:160px">
+    <select name="category" required enterkeyhint="next">
       <option value="">Category…</option>
       <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
     </select>
-
-    <label>How many:&nbsp;<input name="copies" type="number" min="1" value="1" style="width:80px"></label>
   </div>
 
-  <div style="margin-top:10px;">
+  <div class="form-row" style="display:flex; align-items:center; gap:12px; max-width: 420px;">
+    <label for="copies">How many:</label>
+    <input id="copies" name="copies" value="1" min="1"
+           type="number" inputmode="numeric" enterkeyhint="done" style="width:120px;" />
+  </div>
+
+  <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
     <button class="btn" type="submit">Print Barcode</button>
     <a class="btn" href="{{ url_for('billing') }}">Back</a>
   </div>

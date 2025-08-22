@@ -227,7 +227,7 @@ CLS
 TEXT 120,10,"3",0,1,1,"DRIP"
 BARCODE 40,40,"128",50,1,0,2,2,"{code}"
 TEXT 40,100,"2",0,1,1,"Code: {code}"
-PRINT 1,1
+PRINT {copies},1
 """
         tspl = _to_crlf(tspl)
 
