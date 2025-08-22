@@ -12,10 +12,8 @@
 
 <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
   <a class="btn" href="{{ url_for('labels.tspl_for_code', code=code) }}">Open TSPL</a>
-
-  <!-- One-line deep link (no newlines!) -->
+  <!-- One-line deep link -->
   <a class="btn" href="{{ deeplink }}">Print via Android (Bluetooth)</a>
-
   <a class="btn" href="{{ url_for('labels.page') }}">Back</a>
 </div>
 

@@ -1,15 +1,14 @@
 # labels.py
 import os, random, string, io
 from datetime import datetime
-from flask import Blueprint, Response, request, render_template, url_for, current_app, abort
+from flask import Blueprint, Response, request, render_template, current_app, abort
 from PIL import Image
 from barcode import Code128
 from barcode.writer import ImageWriter
-
-# Use your existing DB connection helper (Postgres)
-from db import get_connection
+from db import get_connection  # your existing helper
 
 def _to_crlf(s: str) -> str:
+    # TSPL printers prefer CRLF line endings
     return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
 
 labels_bp = Blueprint("labels", __name__, url_prefix="/labels")
@@ -66,7 +65,6 @@ def insert_code(brand, size, category, mrp, bought, sp, code):
         conn.commit()
 
 def generate_unique_code():
-    # 6 alnum, retry a few times
     for _ in range(10):
         code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         with get_connection() as conn:
@@ -74,16 +72,16 @@ def generate_unique_code():
                 cur.execute("SELECT 1 FROM barcode_catalog WHERE barcode_data=%s", (code,))
                 if not cur.fetchone():
                     return code
-    return code
+    return code  # very unlikely to reach here
 
 # ---------- PNG generation ----------
 def make_barcode_png(data: str) -> str:
     """
-    Create a 180x60 PNG under static/barcodes/<CODE>_180x60.png, return relative path for url_for('static', filename=...).
+    Create a 180x60 PNG under static/barcodes/<CODE>_180x60.png,
+    return the relative path for url_for('static', filename=...).
     """
     os.makedirs(os.path.join(current_app.root_path, "static", "barcodes"), exist_ok=True)
     clean = data.upper().replace("|","").replace(" ","").replace(".","").replace(",","")
-    # Save to a temp BytesIO first
     code128 = Code128(clean, writer=ImageWriter())
     out = io.BytesIO()
     code128.write(out, options={
@@ -107,7 +105,7 @@ def make_barcode_png(data: str) -> str:
     return rel
 
 # ---------- TSPL builder ----------
-def tspl_for_item(code: str, brand: str, size: str, mrp, sp) -> str:
+def tspl_for_item(code: str, brand: str, size: str, mrp, sp, copies: int = 1) -> str:
     label_width_mm = 50.8
     dpi = 203
     label_width_dots = int(label_width_mm * dpi / 25.4)  # ~406
@@ -138,7 +136,7 @@ TEXT 40,125,"2",0,1,1,"{brand}"
 TEXT 210,125,"2",0,1,1,"Size: {size}"
 {os.linesep.join(lines)}
 
-PRINT 1,1
+PRINT {max(1, int(copies))},1
 """
     return _to_crlf(tspl)
 
@@ -146,6 +144,7 @@ PRINT 1,1
 @labels_bp.get("/", endpoint="page")
 def labels_page():
     ensure_barcode_table()
+    # Renders your form template (make sure templates/labels_form.html exists)
     return render_template("labels_form.html")
 
 @labels_bp.post("/create", endpoint="create")
@@ -172,7 +171,7 @@ def labels_create():
     if not brand or not size or not category:
         abort(400, "brand, size, category required")
 
-    # Reuse existing code if the exact combo exists
+    # Reuse existing code if exact combo exists
     code = find_existing_code(brand, size, category, mrp, bought, sp)
     if not code:
         code = generate_unique_code()
@@ -181,13 +180,14 @@ def labels_create():
     # PNG preview
     rel_img = make_barcode_png(code)
 
-    # TSPL
-    tspl = tspl_for_item(code, brand, size, mrp, sp)
+    # TSPL with copies embedded (printer repeats)
+    tspl = tspl_for_item(code, brand, size, mrp, sp, copies)
 
-    # Deep link (single line!)
+    # Deep link (Android app will download /labels/tspl/<code>.txt)
     base = request.host_url.rstrip("/")
     deeplink = f"tspl://print?base={base}&code={code}&copies={copies}"
 
+    # Renders your result template (make sure templates/labels_created.html exists)
     return render_template(
         "labels_created.html",
         code=code, brand=brand, size=size, category=category,
@@ -195,7 +195,7 @@ def labels_create():
         rel_img=rel_img, tspl=tspl, deeplink=deeplink
     )
 
-# ---------- TSPL raw endpoints (already used by Android) ----------
+# ---------- TSPL raw endpoints (Android uses this) ----------
 @labels_bp.get("/tspl/ping.txt", endpoint="tspl_ping")
 def tspl_ping():
     tspl = """SIZE 50.8 mm, 25 mm
@@ -208,7 +208,9 @@ PRINT 1,1
 
 @labels_bp.get("/tspl/<path:code>.txt", endpoint="tspl_for_code")
 def tspl_for_code(code: str):
-    # For safety, pull minimal item info if present; otherwise print the code only
+    # Try to enrich from DB; otherwise print a minimal label with the code
+    brand = size = None
+    mrp = sp = None
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -216,10 +218,11 @@ def tspl_for_code(code: str):
                 (code,)
             )
             row = cur.fetchone()
+            if row:
+                brand, size, mrp, sp = row
 
-    if row:
-        brand, size, mrp, sp = row
-        tspl = tspl_for_item(code, brand or "", size or "", mrp, sp)
+    if brand or size or mrp or sp:
+        tspl = tspl_for_item(code, brand or "", size or "", mrp, sp, copies=1)
     else:
         tspl = f"""SIZE 50.8 mm, 25 mm
 GAP 2 mm, 0 mm
@@ -227,7 +230,7 @@ CLS
 TEXT 120,10,"3",0,1,1,"DRIP"
 BARCODE 40,40,"128",50,1,0,2,2,"{code}"
 TEXT 40,100,"2",0,1,1,"Code: {code}"
-PRINT {copies},1
+PRINT 1,1
 """
         tspl = _to_crlf(tspl)
 
