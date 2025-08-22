@@ -19,9 +19,12 @@
   table.barcode-list { width: 100%; max-width: 960px; border-collapse: collapse; margin-top: 18px; }
   table.barcode-list th, table.barcode-list td { border: 1px solid #eee; padding: 8px; font-size: 14px; }
   table.barcode-list th { background: #fafafa; text-align: left; }
+  .btn { display:inline-block; padding:8px 12px; background:#1976d2; color:#fff; text-decoration:none; border-radius:6px; }
+  .btn:disabled { opacity:.6; pointer-events:none; }
 </style>
 
-<form method="post" action="{{ url_for('labels.create') }}">
+<!-- One-page form; no redirect needed -->
+<form id="labelForm" onsubmit="return false;">
   <div class="form-row form-grid">
     <input id="brand" class="brand" name="brand" placeholder="Brand" required
            value="{{ brand_val or '' }}"
@@ -62,7 +65,8 @@
   </div>
 
   <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="btn" type="submit" tabindex="8">Print Barcode</button>
+    <button class="btn" type="button" id="btnMobile">Print on Mobile</button>
+    <button class="btn" type="button" id="btnPc">Print on PC</button>
     <a class="btn" href="{{ url_for('billing') }}">Back</a>
   </div>
 </form>
@@ -117,42 +121,112 @@
     if (el.tagName === "SELECT") el.addEventListener("change", () => focusNext(id));
   });
 
-  // ----- Size options based on category (like PyQt version) -----
+  // ----- Size options based on category -----
   const sizesAlpha = ["S","M","L","XL","XXL"];
   const sizesNumeric = ["28","30","32","34","36","38","40","42"];
   const sizeSel = document.getElementById("size");
   const catSel  = document.getElementById("category");
-  const initialCategory = "{{ category_val or '' }}";
-  const initialSize = "{{ size_val or '' }}";
+
+  function normalizeSize(size, category) {
+    let s = (size || "").toString().trim().toUpperCase();
+    if (category === "Pant" || category === "Short") {
+      s = s.replace(/\.0$/, "");
+    }
+    return s;
+  }
 
   function populateSizes(category, selected) {
     sizeSel.innerHTML = "";
     const opts = (category === "Pant" || category === "Short") ? sizesNumeric : sizesAlpha;
     sizeSel.appendChild(new Option("Size…", ""));
     opts.forEach(v => sizeSel.appendChild(new Option(v, v)));
-    if (selected) sizeSel.value = selected;
+    if (selected) {
+      const wanted = normalizeSize(selected, category);
+      sizeSel.value = wanted;
+    }
   }
 
-  // Initialize category & sizes
+  // Initialize
+  const initialCategory = "{{ category_val or '' }}";
+  const initialSizeRaw  = "{{ size_val or '' }}";
   if (initialCategory) catSel.value = initialCategory;
-  populateSizes(catSel.value || "", initialSize || "");
+  populateSizes(catSel.value || "", normalizeSize(initialSizeRaw, catSel.value || ""));
   catSel.addEventListener("change", () => populateSizes(catSel.value, ""));
 
-  // ----- Re-use button: prefill form from table -----
+  // ----- Re-use fill from recent table -----
   window.reuseFill = function(brand, mrp, bought, sp, size, category) {
     document.getElementById("brand").value  = brand || "";
     document.getElementById("mrp").value    = mrp || "";
     document.getElementById("bought").value = bought || "";
     document.getElementById("sp").value     = sp || "";
-    // set category first so sizes are correct
     catSel.value = category || "";
     populateSizes(catSel.value, size || "");
-    // focus on copies last so user can quickly set quantity and hit Enter/Done
     document.getElementById("copies").focus({preventScroll:false});
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
-  // Optional: focus Brand on load if empty
+  // ----- Print handlers -----
+  function val(id){ return document.getElementById(id).value.trim(); }
+  function disableButtons(disabled) {
+    document.getElementById("btnMobile").disabled = disabled;
+    document.getElementById("btnPc").disabled = disabled;
+  }
+
+  async function postQuickPrint(action) {
+  const payload = {
+    brand: document.getElementById("brand").value.trim(),
+    mrp: document.getElementById("mrp").value.trim(),
+    bought: document.getElementById("bought").value.trim(),
+    sp: document.getElementById("sp").value.trim(),
+    size: document.getElementById("size").value.trim(),
+    category: document.getElementById("category").value.trim(),
+    copies: document.getElementById("copies").value || "1",
+    action
+  };
+
+  if (!payload.brand || !payload.size || !payload.category) {
+    alert("Please fill Brand, Size and Category.");
+    return;
+  }
+
+  const url = "{{ url_for('labels.quick_print') }}";
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+
+    const text = await resp.text();  // read body once
+    let data = null;
+    try { data = JSON.parse(text); } catch (_) {}
+
+    if (!resp.ok) {
+      alert(`HTTP ${resp.status}\n` + (data?.error || text.slice(0, 500)));
+      return;
+    }
+    if (!data || data.ok !== true) {
+      alert("Server error: " + (data?.error || text.slice(0, 500)));
+      return;
+    }
+
+    if (action === "mobile") {
+      if (data.deeplink) {
+        window.location.href = data.deeplink; // open Android app
+      } else {
+        alert("No deeplink in response.");
+      }
+    } else {
+      alert("Sent to printer" + (data.code ? ` (code: ${data.code})` : ""));
+    }
+  } catch (e) {
+    alert("Network error: " + e);
+  }
+}
+
+  document.getElementById("btnMobile").addEventListener("click", () => postQuickPrint("mobile"));
+  document.getElementById("btnPc").addEventListener("click", () => postQuickPrint("pc"));
+
   if (!document.getElementById("brand").value) {
     document.getElementById("brand").focus();
   }

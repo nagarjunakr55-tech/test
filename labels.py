@@ -1,151 +1,157 @@
 # labels.py
-import os, random, string, io
-from datetime import datetime
-from flask import Blueprint, Response, request, render_template, current_app, abort
-from PIL import Image
-from barcode import Code128
-from barcode.writer import ImageWriter
-from db import get_connection  # your existing helper
+import os
+import platform
+import random
+import string
+from typing import Optional
 
-def _to_crlf(s: str) -> str:
-    # TSPL printers prefer CRLF line endings
-    return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
+from flask import (
+    Blueprint, Response, render_template, request, jsonify, current_app
+)
+from urllib.parse import quote as urlquote
+
+from db import get_connection  # your existing DB helper
 
 labels_bp = Blueprint("labels", __name__, url_prefix="/labels")
-labels_bp.strict_slashes = False
+labels_bp.strict_slashes = False  # avoid trailing-slash 404s
 
-# ---------- DB helpers ----------
+# --- Optional Windows printing support ---------------------------------------
+try:
+    import win32print  # only available on Windows
+    WIN32_AVAILABLE = True
+except Exception:
+    WIN32_AVAILABLE = False
+
+
+# --- Helpers ------------------------------------------------------------------
+def _to_crlf(s: str) -> str:
+    """Normalize newlines to CRLF for TSPL printers."""
+    return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
+
+
+def safe_float(x) -> Optional[float]:
+    if x is None:
+        return None
+    s = str(x).strip()
+    if s == "" or s.lower() in {"none", "null", "nan"}:
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
 def ensure_barcode_table():
-    ddl = """
-    CREATE TABLE IF NOT EXISTS barcode_catalog (
-        id SERIAL PRIMARY KEY,
-        brand TEXT,
-        mrp NUMERIC,
-        bought_price NUMERIC,
-        selling_price NUMERIC,
-        size TEXT,
-        category TEXT,
-        barcode_data TEXT UNIQUE,
-        status TEXT DEFAULT 'available',
-        created_at TIMESTAMP DEFAULT NOW()
-    );
-    """
+    """(If you want a safety check on boot, but your schema already exists.)"""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(ddl)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS barcode_catalog (
+                    id SERIAL PRIMARY KEY,
+                    brand TEXT,
+                    mrp DOUBLE PRECISION,
+                    bought_price DOUBLE PRECISION,
+                    selling_price DOUBLE PRECISION,
+                    size TEXT,
+                    category TEXT,
+                    barcode_data TEXT UNIQUE,
+                    status TEXT DEFAULT 'available',
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+                """
+            )
         conn.commit()
 
-def find_existing_code(brand, size, category, mrp, bought, sp):
+
+def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
     sql = """
-    SELECT barcode_data
-      FROM barcode_catalog
+    SELECT barcode_data FROM barcode_catalog
      WHERE brand=%s AND size=%s AND category=%s
-       AND ((mrp IS NULL AND %s IS NULL) OR mrp = %s)
-       AND ((bought_price IS NULL AND %s IS NULL) OR bought_price = %s)
-       AND ((selling_price IS NULL AND %s IS NULL) OR selling_price = %s)
-     ORDER BY id DESC
+       AND ((mrp = %s) OR (mrp IS NULL AND %s IS NULL))
+       AND ((bought_price = %s) OR (bought_price IS NULL AND %s IS NULL))
+       AND ((selling_price = %s) OR (selling_price IS NULL AND %s IS NULL))
      LIMIT 1
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (brand, size, category, mrp, mrp, bought, bought, sp, sp))
+            cur.execute(sql, (brand, size, category,
+                              mrp, mrp,
+                              bought, bought,
+                              sp, sp))
             row = cur.fetchone()
             return row[0] if row else None
 
-def insert_code(brand, size, category, mrp, bought, sp, code):
+
+
+def insert_code(brand, size, category, mrp, bought, sp, code: str) -> None:
     sql = """
     INSERT INTO barcode_catalog
-        (brand, mrp, bought_price, selling_price, size, category, barcode_data, status, created_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, 'available', %s)
+      (brand, mrp, bought_price, selling_price, size, category, barcode_data, status)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, 'available')
     ON CONFLICT (barcode_data) DO NOTHING
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (brand, mrp, bought, sp, size, category, code, datetime.utcnow()))
+            cur.execute(sql, (brand, mrp, bought, sp, size, category, code))
         conn.commit()
 
-def generate_unique_code():
-    for _ in range(10):
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM barcode_catalog WHERE barcode_data=%s", (code,))
-                if not cur.fetchone():
-                    return code
-    return code  # very unlikely to reach here
 
-# ---------- PNG generation ----------
-def make_barcode_png(data: str) -> str:
+def tspl_for_item(code: str, brand: str, size: str,
+                  mrp: Optional[float], sp: Optional[float],
+                  copies: int = 1) -> str:
     """
-    Create a 180x60 PNG under static/barcodes/<CODE>_180x60.png,
-    return the relative path for url_for('static', filename=...).
+    Build TSPL for 50.8 x 25 mm label. Copies are embedded so the printer repeats.
     """
-    os.makedirs(os.path.join(current_app.root_path, "static", "barcodes"), exist_ok=True)
-    clean = data.upper().replace("|","").replace(" ","").replace(".","").replace(",","")
-    code128 = Code128(clean, writer=ImageWriter())
-    out = io.BytesIO()
-    code128.write(out, options={
-        "module_width": 0.28,
-        "module_height": 18.0,
-        "quiet_zone": 2.0,
-        "font_size": 10,
-        "text_distance": 1.0,
-        "write_text": True
-    })
-    out.seek(0)
-    img = Image.open(out).convert("RGB")
-    try:
-        resized = img.resize((180, 60), Image.Resampling.LANCZOS)
-    except Exception:
-        resized = img.resize((180, 60), Image.LANCZOS)
-
-    rel = f"barcodes/{clean}_180x60.png"
-    abs_path = os.path.join(current_app.root_path, "static", rel)
-    resized.save(abs_path)
-    return rel
-
-# ---------- TSPL builder ----------
-def tspl_for_item(code: str, brand: str, size: str, mrp, sp, copies: int = 1) -> str:
-    label_width_mm = 50.8
-    dpi = 203
-    label_width_dots = int(label_width_mm * dpi / 25.4)  # ~406
-
-    def center_x(chars, font_w):
-        return (label_width_dots - (chars * font_w)) // 2
-
-    drip_x = center_x(len("DRIP"), 24)  # font "3" approx 24-dot width
-
+    # Simple layout matching your previous design
+    # Center "DRIP" roughly; other fields at fixed positions
     lines = []
     if mrp is not None:
-        try: lines.append(f'TEXT 40,155,"2",0,1,1,"MRP: {int(float(mrp))}"')
-        except: pass
+        try:
+            lines.append(f'TEXT 40,155,"2",0,1,1,"MRP: {int(mrp)}"')
+        except Exception:
+            pass
     if sp is not None:
-        try: lines.append(f'TEXT 210,155,"2",0,1,1,"SP: {int(float(sp))}"')
-        except: pass
+        try:
+            lines.append(f'TEXT 210,155,"2",0,1,1,"SP: {int(sp)}"')
+        except Exception:
+            pass
 
-    tspl = f"""
-SIZE 50.8 mm, 25 mm
+    tspl = f"""SIZE 50.8 mm, 25 mm
 GAP 2 mm, 0 mm
 DIRECTION 1
 CLS
-
-TEXT {drip_x},5,"3",0,1,1,"DRIP"
+TEXT 120,5,"3",0,1,1,"DRIP"
 BARCODE 40,40,"128",50,1,0,2,2,"{code}"
-
 TEXT 40,125,"2",0,1,1,"{brand}"
 TEXT 210,125,"2",0,1,1,"Size: {size}"
 {os.linesep.join(lines)}
-
 PRINT {max(1, int(copies))},1
 """
-    return _to_crlf(tspl)
+    return tspl
 
-# ---------- Web pages ----------
+
+def print_tspl_windows(tspl_text: str, printer_name: str) -> None:
+    """Send raw TSPL once (it already contains PRINT {copies},1)."""
+    if platform.system() != "Windows" or not WIN32_AVAILABLE:
+        raise RuntimeError("PC printing only works on Windows with pywin32 installed.")
+    hPrinter = win32print.OpenPrinter(printer_name)
+    try:
+        win32print.StartDocPrinter(hPrinter, 1, ("Barcode Label", None, "RAW"))
+        win32print.StartPagePrinter(hPrinter)
+        win32print.WritePrinter(hPrinter, tspl_text.encode("ascii"))
+        win32print.EndPagePrinter(hPrinter)
+        win32print.EndDocPrinter(hPrinter)
+    finally:
+        win32print.ClosePrinter(hPrinter)
+
+
+# --- Pages & APIs -------------------------------------------------------------
+
 @labels_bp.get("/", endpoint="page")
 def labels_page():
-    ensure_barcode_table()
-
-    # Prefill from query params (when coming from Re-use)
+    """Form + recent list + reuse (all on one page)."""
+    # Prefill from query (optional)
     brand = (request.args.get("brand") or "").strip()
     mrp = request.args.get("mrp")
     bought = request.args.get("bought")
@@ -154,23 +160,12 @@ def labels_page():
     category = (request.args.get("category") or "").strip()
     copies = int(request.args.get("copies") or 1)
 
-    # Normalize numbers
-    def safe_float(x):
-        if x is None or str(x).strip() == "": return None
-        try: return float(x)
-        except: return None
-
-    mrp_f = safe_float(mrp)
-    bought_f = safe_float(bought)
-    sp_f = safe_float(sp)
-
-    # Recent barcodes (list view)
+    # Recent rows
     rows = []
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT brand, COALESCE(mrp,0), COALESCE(bought_price,0), COALESCE(selling_price,0),
-                       size, category, barcode_data
+                SELECT brand, mrp, bought_price, selling_price, size, category, barcode_data, created_at
                   FROM barcode_catalog
                  ORDER BY id DESC
                  LIMIT 100
@@ -190,74 +185,19 @@ def labels_page():
     )
 
 
-@labels_bp.post("/create", endpoint="create")
-def labels_create():
-    ensure_barcode_table()
-
-    brand = (request.form.get("brand") or "").strip()
-    size = (request.form.get("size") or "").strip()
-    category = (request.form.get("category") or "").strip()
-    mrp = request.form.get("mrp") or None
-    bought = request.form.get("bought") or None
-    sp = request.form.get("sp") or None
-    copies = int(request.form.get("copies") or 1)
-
-    def safe_float(x):
-        if x is None or str(x).strip() == "": return None
-        try: return float(x)
-        except: return None
-
-    mrp = safe_float(mrp)
-    bought = safe_float(bought)
-    sp = safe_float(sp)
-
-    if not brand or not size or not category:
-        abort(400, "brand, size, category required")
-
-    # Reuse existing code if exact combo exists
-    code = find_existing_code(brand, size, category, mrp, bought, sp)
-    if not code:
-        code = generate_unique_code()
-        insert_code(brand, size, category, mrp, bought, sp, code)
-
-    # PNG preview
-    rel_img = make_barcode_png(code)
-
-    # TSPL with copies embedded (printer repeats)
-    tspl = tspl_for_item(code, brand, size, mrp, sp, copies)
-
-    # Deep link (Android app will download /labels/tspl/<code>.txt)
-    base = request.host_url.rstrip("/")
-    deeplink = f"tspl://print?base={base}&code={code}&copies={copies}"
-
-    # Renders your result template (make sure templates/labels_created.html exists)
-    return render_template(
-        "labels_created.html",
-        code=code, brand=brand, size=size, category=category,
-        mrp=mrp, sp=sp, copies=copies,
-        rel_img=rel_img, tspl=tspl, deeplink=deeplink
-    )
-
-# ---------- TSPL raw endpoints (Android uses this) ----------
-@labels_bp.get("/tspl/ping.txt", endpoint="tspl_ping")
-def tspl_ping():
-    tspl = """SIZE 50.8 mm, 25 mm
-GAP 2 mm, 0 mm
-CLS
-TEXT 10,10,"3",0,1,1,"PING"
-PRINT 1,1
-"""
-    return Response(_to_crlf(tspl), mimetype="text/plain; charset=us-ascii")
-
 @labels_bp.get("/tspl/<path:code>.txt", endpoint="tspl_for_code")
 def tspl_for_code(code: str):
-    # Try to enrich from DB; otherwise print a minimal label with the code
+    """
+    Serve TSPL for a code. Accepts ?copies= so Android can fetch with repetitions
+    embedded (the app then sends the job once over BT).
+    """
+    copies = int((request.args.get("copies") or "1").strip() or "1")
     brand = size = None
     mrp = sp = None
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT brand,size,mrp,selling_price FROM barcode_catalog WHERE barcode_data=%s",
+                "SELECT brand,size,mrp,selling_price FROM barcode_catalog WHERE barcode_data=%s LIMIT 1",
                 (code,)
             )
             row = cur.fetchone()
@@ -265,16 +205,100 @@ def tspl_for_code(code: str):
                 brand, size, mrp, sp = row
 
     if brand or size or mrp or sp:
-        tspl = tspl_for_item(code, brand or "", size or "", mrp, sp, copies=1)
+        tspl = tspl_for_item(code, brand or "", size or "", mrp, sp, copies=copies)
     else:
+        # fallback: minimal label
         tspl = f"""SIZE 50.8 mm, 25 mm
 GAP 2 mm, 0 mm
 CLS
 TEXT 120,10,"3",0,1,1,"DRIP"
 BARCODE 40,40,"128",50,1,0,2,2,"{code}"
 TEXT 40,100,"2",0,1,1,"Code: {code}"
-PRINT 1,1
+PRINT {max(1, copies)},1
 """
+
+    tspl = _to_crlf(tspl)
+    return Response(tspl, mimetype="text/plain; charset=us-ascii")
+
+
+from urllib.parse import quote as urlquote  # make sure this import exists at top
+
+@labels_bp.post("/quick_print", endpoint="quick_print")
+def quick_print():
+    """
+    JSON or form body:
+      brand, mrp, bought, sp, size, category, copies, action=('mobile'|'pc')
+    Returns JSON always: { ok, deeplink?, code?, error? }
+    """
+    try:
+        data = request.get_json(silent=True) or request.form or {}
+        brand = (data.get("brand") or "").strip()
+        size = (data.get("size") or "").strip()
+        category = (data.get("category") or "").strip()
+        mrp = safe_float(data.get("mrp"))
+        bought = safe_float(data.get("bought"))
+        sp = safe_float(data.get("sp"))
+        try:
+            copies = int((data.get("copies") or 1) or 1)
+        except Exception:
+            copies = 1
+        action = (data.get("action") or "mobile").strip().lower()
+
+        if not brand or not size or not category:
+            return jsonify({"ok": False, "error": "Missing brand/size/category"}), 400
+
+        # --- find or create code (guarded) ---
+        try:
+            code = find_existing_code(brand, size, category, mrp, bought, sp)
+        except Exception as e:
+            current_app.logger.exception("find_existing_code failed")
+            code = None
+
+        if not code:
+            import random, string
+            code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            try:
+                insert_code(brand, size, category, mrp, bought, sp, code)
+            except Exception:
+                # don't fail printing just because insert failed
+                current_app.logger.exception("insert_code failed (continuing)")
+
+        # --- build TSPL (guarded) ---
+        try:
+            tspl = tspl_for_item(code, brand, size, mrp, sp, copies=copies)
+        except Exception:
+            current_app.logger.exception("tspl_for_item failed, using fallback")
+            tspl = f"""SIZE 50.8 mm, 25 mm
+GAP 2 mm, 0 mm
+CLS
+TEXT 120,10,"3",0,1,1,"DRIP"
+BARCODE 40,40,"128",50,1,0,2,2,"{code}"
+TEXT 40,100,"2",0,1,1,"Code: {code}"
+PRINT {max(1, copies)},1
+"""
+
         tspl = _to_crlf(tspl)
 
-    return Response(tspl, mimetype="text/plain; charset=us-ascii")
+        if action == "mobile":
+            base = request.url_root.rstrip("/")  # e.g. https://example.com
+            deeplink = f"tspl://print?base={urlquote(base)}&code={urlquote(code)}&copies={copies}"
+            return jsonify({"ok": True, "deeplink": deeplink, "code": code}), 200
+
+        elif action == "pc":
+            # Only works on Windows with pywin32 installed
+            try:
+                printer_name = current_app.config.get("DEFAULT_PRINTER_NAME", "4BARCODE 4B-2034PA")
+                print_tspl_windows(tspl, printer_name)  # sends ONCE; PRINT {copies},1 inside
+                return jsonify({"ok": True, "code": code}), 200
+            except Exception as e:
+                current_app.logger.exception("print_tspl_windows failed")
+                return jsonify({"ok": False, "error": str(e), "code": code}), 500
+
+        else:
+            return jsonify({"ok": False, "error": "Unknown action"}), 400
+
+    except Exception as e:
+        # Last-resort catch: ALWAYS return JSON (not HTML)
+        current_app.logger.exception("quick_print crashed")
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
