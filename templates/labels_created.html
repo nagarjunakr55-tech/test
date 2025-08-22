@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Barcode Created</h2>
+
+<p><strong>Code:</strong> <code>{{ code }}</code></p>
+<p><strong>Brand:</strong> {{ brand }} &nbsp; <strong>Size:</strong> {{ size }} &nbsp; <strong>Category:</strong> {{ category }}</p>
+{% if mrp is not none %}<p><strong>MRP:</strong> {{ mrp|int }}</p>{% endif %}
+{% if sp  is not none %}<p><strong>SP:</strong> {{ sp|int }}</p>{% endif %}
+
+<h3>Preview PNG</h3>
+<img src="{{ url_for('static', filename=rel_img) }}" alt="barcode" style="border:1px solid #eee;">
+
+<div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+  <a class="btn" href="{{ url_for('labels.tspl_for_code', code=code) }}">Open TSPL</a>
+
+  <!-- One-line deep link (no newlines!) -->
+  <a class="btn" href="{{ deeplink }}">Print via Android (Bluetooth)</a>
+
+  <a class="btn" href="{{ url_for('labels.page') }}">Back</a>
+</div>
+
+<h3>TSPL</h3>
+<pre style="background:#fafafa; padding:10px; border:1px solid #eee; max-width:720px; overflow:auto;">{{ tspl }}</pre>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Barcode Generator</h2>
+
+<form method="post" action="{{ url_for('labels.create') }}" style="max-width:720px">
+  <div style="display:flex; gap:8px; margin-bottom:8px;">
+    <input name="brand"   placeholder="Brand" style="flex:1" required>
+    <input name="mrp"     placeholder="MRP" style="width:120px">
+    <input name="bought"  placeholder="Bought" style="width:120px">
+    <input name="sp"      placeholder="SP Price" style="width:120px">
+  </div>
+
+  <div style="display:flex; gap:8px; margin-bottom:8px;">
+    <select name="size" required style="width:140px">
+      <option value="">Size…</option>
+      <option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option>
+      <option>28</option><option>30</option><option>32</option><option>34</option><option>36</option><option>38</option><option>40</option><option>42</option>
+    </select>
+
+    <select name="category" required style="width:160px">
+      <option value="">Category…</option>
+      <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+    </select>
+
+    <label>How many:&nbsp;<input name="copies" type="number" min="1" value="1" style="width:80px"></label>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button class="btn" type="submit">Print Barcode</button>
+    <a class="btn" href="{{ url_for('billing') }}">Back</a>
+  </div>
+</form>
+{% endblock %}
