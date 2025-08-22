@@ -18,11 +18,10 @@
 </a>
 
 <a class="btn"
-   href="tspl://print?base={{ request.url_root|trim('/')|urlencode }}
-                     &code={{ code|urlencode }}
-                     &copies={{ copies|default(1) }}">
+   href="tspl://print?base={{ request.host_url|trim('/')|urlencode }}&code={{ code|urlencode }}&copies={{ copies|default(1) }}">
   Print via Android (Bluetooth)
 </a>
+
 
 
 

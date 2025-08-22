@@ -1,5 +1,7 @@
 # labels.py
 from flask import Blueprint, Response, request, render_template
+import logging
+log = logging.getLogger("drip")
 
 def _to_crlf(s: str) -> str:
     return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
@@ -25,8 +27,9 @@ PRINT 1,1
     return Response(_to_crlf(tspl), mimetype="text/plain; charset=us-ascii")
 
 # --- /labels/tspl/<code>.txt ---
-@labels_bp.get("/tspl/<code>.txt", endpoint="tspl_for_code")
+@labels_bp.get("/tspl/<path:code>.txt", endpoint="tspl_for_code")
 def tspl_for_code(code: str):
+    log.info("TSPL request for code=%r", code)
     tspl = f"""SIZE 50.8 mm, 25 mm
 GAP 2 mm, 0 mm
 CLS
