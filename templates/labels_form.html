@@ -16,41 +16,48 @@
     .form-grid { grid-template-columns: 1fr 1fr; }
     .brand { grid-column: 1 / span 2; } /* brand full width on mobile */
   }
+  table.barcode-list { width: 100%; max-width: 960px; border-collapse: collapse; margin-top: 18px; }
+  table.barcode-list th, table.barcode-list td { border: 1px solid #eee; padding: 8px; font-size: 14px; }
+  table.barcode-list th { background: #fafafa; text-align: left; }
 </style>
 
 <form method="post" action="{{ url_for('labels.create') }}">
   <div class="form-row form-grid">
     <input id="brand" class="brand" name="brand" placeholder="Brand" required
+           value="{{ brand_val or '' }}"
            tabindex="1" enterkeyhint="next" autocomplete="off" />
 
     <input id="mrp" name="mrp" placeholder="MRP"
            type="text" inputmode="decimal" pattern="[0-9]*"
+           value="{{ mrp_val or '' }}"
            tabindex="2" enterkeyhint="next" autocomplete="off" />
 
     <input id="bought" name="bought" placeholder="Bought"
            type="text" inputmode="decimal" pattern="[0-9]*"
+           value="{{ bought_val or '' }}"
            tabindex="3" enterkeyhint="next" autocomplete="off" />
 
     <input id="sp" name="sp" placeholder="SP Price"
            type="text" inputmode="decimal" pattern="[0-9]*"
+           value="{{ sp_val or '' }}"
            tabindex="4" enterkeyhint="next" autocomplete="off" />
 
     <select id="size" name="size" required tabindex="5" enterkeyhint="next">
-      <option value="">Size…</option>
-      <option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option>
-      <option>28</option><option>30</option><option>32</option><option>34</option>
-      <option>36</option><option>38</option><option>40</option><option>42</option>
+      <!-- options injected by JS based on category -->
     </select>
 
     <select id="category" name="category" required tabindex="6" enterkeyhint="next">
       <option value="">Category…</option>
-      <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+      <option value="Shirt">Shirt</option>
+      <option value="Pant">Pant</option>
+      <option value="Short">Short</option>
+      <option value="T-Shirt">T-Shirt</option>
     </select>
   </div>
 
   <div class="form-row" style="display:flex; align-items:center; gap:12px; max-width:420px;">
     <label for="copies">How many:</label>
-    <input id="copies" name="copies" value="1" min="1"
+    <input id="copies" name="copies" value="{{ copies_val or 1 }}" min="1"
            type="number" inputmode="numeric" tabindex="7" enterkeyhint="done" style="width:120px;" />
   </div>
 
@@ -60,30 +67,95 @@
   </div>
 </form>
 
+{% if recent_rows %}
+  <h3 style="margin-top:24px;">Recent Barcodes</h3>
+  <table class="barcode-list">
+    <thead>
+      <tr>
+        <th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th><th>Size</th><th>Category</th><th>Code</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in recent_rows %}
+      <tr>
+        <td>{{ r[0] }}</td>
+        <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
+        <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
+        <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
+        <td>{{ r[4] }}</td>
+        <td>{{ r[5] }}</td>
+        <td><code>{{ r[6] }}</code></td>
+        <td>
+          <button class="btn" type="button"
+                  onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
+            Re-use
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
 <script>
-(function() {
+(function () {
+  // ----- Focus order (Enter/Next) -----
   const order = ["brand","mrp","bought","sp","size","category","copies"];
   function focusNext(id) {
     const idx = order.indexOf(id);
-    const nextId = idx >= 0 && idx < order.length - 1 ? order[idx+1] : null;
-    if (nextId) document.getElementById(nextId)?.focus();
+    if (idx >= 0 && idx < order.length - 1) {
+      document.getElementById(order[idx+1])?.focus();
+    }
   }
   function handleEnterAdvance(e) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      focusNext(e.target.id);
-    }
+    if (e.key === "Enter") { e.preventDefault(); focusNext(e.target.id); }
   }
   order.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (el.tagName === "INPUT") {
-      el.addEventListener("keydown", handleEnterAdvance);
-    } else if (el.tagName === "SELECT") {
-      el.addEventListener("keydown", handleEnterAdvance);
-      el.addEventListener("change", () => focusNext(id));
-    }
+    el.addEventListener("keydown", handleEnterAdvance);
+    if (el.tagName === "SELECT") el.addEventListener("change", () => focusNext(id));
   });
+
+  // ----- Size options based on category (like PyQt version) -----
+  const sizesAlpha = ["S","M","L","XL","XXL"];
+  const sizesNumeric = ["28","30","32","34","36","38","40","42"];
+  const sizeSel = document.getElementById("size");
+  const catSel  = document.getElementById("category");
+  const initialCategory = "{{ category_val or '' }}";
+  const initialSize = "{{ size_val or '' }}";
+
+  function populateSizes(category, selected) {
+    sizeSel.innerHTML = "";
+    const opts = (category === "Pant" || category === "Short") ? sizesNumeric : sizesAlpha;
+    sizeSel.appendChild(new Option("Size…", ""));
+    opts.forEach(v => sizeSel.appendChild(new Option(v, v)));
+    if (selected) sizeSel.value = selected;
+  }
+
+  // Initialize category & sizes
+  if (initialCategory) catSel.value = initialCategory;
+  populateSizes(catSel.value || "", initialSize || "");
+  catSel.addEventListener("change", () => populateSizes(catSel.value, ""));
+
+  // ----- Re-use button: prefill form from table -----
+  window.reuseFill = function(brand, mrp, bought, sp, size, category) {
+    document.getElementById("brand").value  = brand || "";
+    document.getElementById("mrp").value    = mrp || "";
+    document.getElementById("bought").value = bought || "";
+    document.getElementById("sp").value     = sp || "";
+    // set category first so sizes are correct
+    catSel.value = category || "";
+    populateSizes(catSel.value, size || "");
+    // focus on copies last so user can quickly set quantity and hit Enter/Done
+    document.getElementById("copies").focus({preventScroll:false});
+    window.scrollTo({top: 0, behavior: "smooth"});
+  };
+
+  // Optional: focus Brand on load if empty
+  if (!document.getElementById("brand").value) {
+    document.getElementById("brand").focus();
+  }
 })();
 </script>
 {% endblock %}

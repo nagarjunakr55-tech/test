@@ -144,8 +144,51 @@ PRINT {max(1, int(copies))},1
 @labels_bp.get("/", endpoint="page")
 def labels_page():
     ensure_barcode_table()
-    # Renders your form template (make sure templates/labels_form.html exists)
-    return render_template("labels_form.html")
+
+    # Prefill from query params (when coming from Re-use)
+    brand = (request.args.get("brand") or "").strip()
+    mrp = request.args.get("mrp")
+    bought = request.args.get("bought")
+    sp = request.args.get("sp")
+    size = (request.args.get("size") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    copies = int(request.args.get("copies") or 1)
+
+    # Normalize numbers
+    def safe_float(x):
+        if x is None or str(x).strip() == "": return None
+        try: return float(x)
+        except: return None
+
+    mrp_f = safe_float(mrp)
+    bought_f = safe_float(bought)
+    sp_f = safe_float(sp)
+
+    # Recent barcodes (list view)
+    rows = []
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT brand, COALESCE(mrp,0), COALESCE(bought_price,0), COALESCE(selling_price,0),
+                       size, category, barcode_data
+                  FROM barcode_catalog
+                 ORDER BY id DESC
+                 LIMIT 100
+            """)
+            rows = cur.fetchall()
+
+    return render_template(
+        "labels_form.html",
+        brand_val=brand,
+        mrp_val=mrp if mrp is not None else "",
+        bought_val=bought if bought is not None else "",
+        sp_val=sp if sp is not None else "",
+        size_val=size,
+        category_val=category,
+        copies_val=copies,
+        recent_rows=rows
+    )
+
 
 @labels_bp.post("/create", endpoint="create")
 def labels_create():
