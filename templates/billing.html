@@ -268,7 +268,7 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
 // ---------- Apply Discount ----------
 // - typing "25" means 25%
 // - typing "25%" also ok
-// - MAX rule enforced for ALL discounts: final >= bought_total + 250
+// - MAX rule enforced for ALL discounts: final >= bought_total + 100
 
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();

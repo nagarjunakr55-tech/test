@@ -154,7 +154,7 @@ def calculate_totals(items, discount_input: str):
     """
     items: [{price, qty, bought_price, ...}]
     discount_input: "20%" or "20" (plain number = percent)
-    MAX rule: (subtotal - discount) must be >= (bought_total + 250) else reject.
+    MAX rule: (subtotal - discount) must be >= (bought_total + 100) else reject.
     """
     if not items:
         raise ValueError("empty_cart")
