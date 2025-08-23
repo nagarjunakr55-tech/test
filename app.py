@@ -31,6 +31,32 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
+    @app.get("/receipts/tspl/<invoice_id>.txt")
+    def receipts_tspl(invoice_id):
+        copies = int((request.args.get("copies") or "1").strip() or 1)
+        invoice = get_invoice_text(invoice_id)
+        if not invoice:
+            abort(404, f"Invoice {invoice_id} not found")
+
+        # --- super-basic TSPL layout; we’ll tune after you test ---
+        lines = invoice.splitlines()
+        y = 20
+        dy = 28
+        tspl = [
+            "SIZE 72 mm, 200 mm",
+            "GAP 2 mm, 0",
+            "DIRECTION 1",
+            "REFERENCE 0,0",
+            "CLS",
+        ]
+        for line in lines[:250]:  # safety bound
+            safe = line.replace('"', "'")
+            tspl.append(f'TEXT 20,{y},"0",0,1,1,"{safe}"')
+            y += dy
+        tspl.append(f"PRINT {copies},1")
+
+        return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
+
     # --- Admin helpers (PIN-based; minimal just for History page) ---
     def is_admin() -> bool:
         return session.get("is_admin") is True
@@ -284,22 +310,52 @@ def create_app() -> Flask:
     @app.post("/api/barcode_lookup")
     def api_barcode_lookup():
         data = request.get_json(silent=True) or {}
-        code = (data.get("barcode") or "").strip()
+        code = (data.get("barcode") or "").strip().upper()
         if not code:
-            return jsonify({"ok": False, "error": "barcode required"}), 400
-        prod = find_product_by_barcode(code)
-        if not prod:
+            return jsonify({"ok": False, "error": "empty_barcode"}), 400
+
+        # Helper: coerce to int or None (your prices are INTEGER in DB)
+        def to_int_or_none(x):
+            if x is None:
+                return None
+            try:
+                # handle strings like "123" or "123.0"
+                return int(float(str(x).strip()))
+            except Exception:
+                return None
+
+        # Fetch the product
+        row = None
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand, category, size, mrp, bought_price, selling_price
+                    FROM public.barcode_catalog
+                    WHERE barcode_data = %s
+                    LIMIT 1
+                    """,
+                    (code,)
+                )
+                row = cur.fetchone()
+
+        if not row:
             return jsonify({"ok": False, "error": "not_found"}), 404
+
+        brand, category, size, mrp, bought, sp = row
+
+        # Build cart item for your frontend
         item = {
-            "brand": prod["brand"],
-            "mrp_price": float(prod.get("mrp", 0)),
-            "bought_price": float(prod.get("bought_price", 0)),
-            "price": float(prod.get("selling_price", 0)),
-            "qty": 1,
-            "size": prod.get("size", ""),
-            "category": prod.get("category", "")
+            "brand":        brand or "",
+            "category":     category or "",
+            "size":         size or "",
+            "qty":          1,
+            "mrp_price":    to_int_or_none(mrp),          # may be None
+            "bought_price": to_int_or_none(bought),       # may be None
+            "price":        to_int_or_none(sp) or 0       # ensure a usable price
         }
         return jsonify({"ok": True, "item": item})
+
 
     @app.get("/health")
     def health():
