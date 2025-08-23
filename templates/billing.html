@@ -25,6 +25,8 @@
        autocomplete="off">
 
   <button id="btnBarcode">Add</button>
+  <button id="btnScan" type="button">Scan</button>
+
 </div>
 
 <!-- MANUAL add area (hidden by default) -->
@@ -106,6 +108,54 @@
 <!-- Invoice preview -->
 <h3 style="margin-top:12px;">Invoice Preview</h3>
 <pre id="invoicePreview" style="background:#fff;"></pre>
+
+<script>
+  // Build a callback URL back to THIS page (preserves path)
+  function buildCallback() {
+    const url = new URL(window.location.href);
+    // clear any previous code param
+    url.searchParams.delete('code');
+    return url.toString();
+  }
+
+  // Launch the Android scanner app via deep link
+  function openScanner() {
+    const cb = encodeURIComponent(buildCallback());
+    const deeplink = `dripscan://scan?callback=${cb}`;
+    // try to open the app
+    window.location.href = deeplink;
+
+    // Optional fallback: if app not installed, show message after a delay
+    setTimeout(() => {
+      // You can show a toast or fallback UI here
+      // alert('Scanner app not available. Please install/open DRIP Scanner.');
+    }, 1500);
+  }
+
+  // Wire the button
+  document.getElementById('btnScan').addEventListener('click', (e) => {
+    e.preventDefault();
+    openScanner();
+  });
+
+  // On page load: if scanner returned with ?code=..., fill and add
+  (function handleScannerReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const code = (params.get('code') || '').trim();
+    if (code) {
+      const input = document.getElementById('barcode');
+      input.value = code;
+      // call your existing function to look up and add to cart
+      if (typeof addBarcode === 'function') {
+        addBarcode();
+      }
+      // Optional: clean the URL so refreshes don’t double-add
+      params.delete('code');
+      const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      window.history.replaceState({}, '', clean);
+    }
+  })();
+</script>
 
 <script>
 // ---------- Toggle MANUAL add ----------
