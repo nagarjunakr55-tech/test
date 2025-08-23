@@ -29,20 +29,21 @@ def _to_crlf(s: str) -> str:
     return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
 
 
-def safe_float(x) -> Optional[float]:
+def safe_int(x) -> Optional[int]:
     if x is None:
         return None
     s = str(x).strip()
     if s == "" or s.lower() in {"none", "null", "nan"}:
         return None
     try:
-        return float(s)
+        return int(float(s))  # handle "123.0" gracefully
     except Exception:
         return None
 
 
+
 def ensure_barcode_table():
-    """(If you want a safety check on boot, but your schema already exists.)"""
+    """Create table with integer prices (idempotent)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -50,9 +51,9 @@ def ensure_barcode_table():
                 CREATE TABLE IF NOT EXISTS barcode_catalog (
                     id SERIAL PRIMARY KEY,
                     brand TEXT,
-                    mrp DOUBLE PRECISION,
-                    bought_price DOUBLE PRECISION,
-                    selling_price DOUBLE PRECISION,
+                    mrp INTEGER,
+                    bought_price INTEGER,
+                    selling_price INTEGER,
                     size TEXT,
                     category TEXT,
                     barcode_data TEXT UNIQUE,
@@ -62,6 +63,7 @@ def ensure_barcode_table():
                 """
             )
         conn.commit()
+
 
 
 def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
@@ -234,9 +236,9 @@ def quick_print():
         category = (data.get("category") or "").strip()
 
         # HTML posts these names: mrp, bought, sp
-        mrp    = safe_float(data.get("mrp"))
-        bought = safe_float(data.get("bought"))
-        sp     = safe_float(data.get("sp"))
+        mrp = safe_int(data.get("mrp"))
+        bought = safe_int(data.get("bought"))
+        sp = safe_int(data.get("sp"))
 
         try:
             copies = int((data.get("copies") or 1) or 1)
