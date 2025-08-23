@@ -183,7 +183,7 @@ def calculate_totals(items, discount_input: str):
             raise ValueError("invalid_discount")
 
         grand_total = max(0.0, subtotal - discount_amt)
-        if grand_total < (bought_total + 250):
+        if grand_total < (bought_total + 100):
             raise ValueError("max_discount_reached")
     else:
         grand_total = subtotal
