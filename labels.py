@@ -300,4 +300,61 @@ PRINT {max(1, copies)},1
         current_app.logger.exception("quick_print crashed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
+# --- Save-only / uniqueness APIs ---------------------------------------------
+import re
+CODE_RE = re.compile(r"^[A-Z0-9_-]{1,40}$")
+
+@labels_bp.get("/barcodes/<code>/exists", endpoint="barcodes_exists")
+def barcodes_exists(code: str):
+    """Return {ok, exists} for a proposed barcode string (barcode_data)."""
+    ensure_barcode_table()
+    code = (code or "").upper()
+    # Treat invalid code as "exists" so Save never enables for bad inputs
+    if not CODE_RE.match(code):
+        return jsonify(ok=True, exists=True)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s LIMIT 1",
+                (code,)
+            )
+            exists = cur.fetchone() is not None
+    return jsonify(ok=True, exists=exists)
+
+@labels_bp.post("/barcodes/create", endpoint="barcodes_create")
+def barcodes_create():
+    """Insert into barcode_catalog without printing; only if code is unique."""
+    ensure_barcode_table()
+    data = request.get_json(silent=True) or {}
+
+    brand    = (data.get("brand") or "").strip()
+    size     = (data.get("size") or "").strip()
+    category = (data.get("category") or "").strip()
+    code     = (data.get("code") or "").strip().upper()
+
+    # prices are INTEGER in your schema; use your helper
+    mrp    = safe_int(data.get("mrp"))
+    bought = safe_int(data.get("bought"))
+    sp     = safe_int(data.get("sp"))
+
+    if not brand or not size or not category:
+        return jsonify(ok=False, error="missing_fields"), 400
+    if not CODE_RE.match(code):
+        return jsonify(ok=False, error="invalid_code"), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Reject if already present
+            cur.execute("SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s", (code,))
+            if cur.fetchone():
+                return jsonify(ok=False, error="code_exists"), 409
+
+            cur.execute("""
+                INSERT INTO public.barcode_catalog
+                  (brand, mrp, bought_price, selling_price, size, category, barcode_data, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'available')
+            """, (brand, mrp, bought, sp, size, category, code))
+        conn.commit()
+    return jsonify(ok=True, code=code)
 

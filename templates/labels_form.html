@@ -64,6 +64,20 @@
            type="number" inputmode="numeric" tabindex="7" enterkeyhint="done" style="width:120px;" />
   </div>
 
+  <!-- NEW: Unique barcode + Save (no print) -->
+  <div class="form-row" style="display:flex; align-items:center; gap:6px; max-width:720px;">
+  <input id="uniqueCode"
+         
+         autocomplete="off"
+         inputmode="latin"
+         pattern="[A-Za-z0-9_-]{6}"
+         minlength="6" maxlength="6" size="6"
+         style="width:8ch; padding:8px 10px; text-transform:uppercase; letter-spacing:1px; text-align:center;">
+  <button class="btn" type="button" id="btnSaveOnly" disabled>Save</button>
+  <span id="uniqueHint" style="font-size:14px;"></span>
+</div>
+
+
   <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
     <button class="btn" type="button" id="btnMobile">Print on Mobile</button>
     <button class="btn" type="button" id="btnPc">Print on PC</button>
@@ -165,72 +179,178 @@
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
-  // ----- Print handlers -----
-  function val(id){ return document.getElementById(id).value.trim(); }
+  // === Labels blueprint endpoints (Jinja -> JS) ===
+  const URL_BARCODES_EXISTS_TMPL = {{ url_for('labels.barcodes_exists', code='__CODE__') | tojson }};
+  const URL_BARCODES_CREATE      = {{ url_for('labels.barcodes_create') | tojson }};
+  const URL_QUICK_PRINT          = {{ url_for('labels.quick_print') | tojson }};
+
+  // ----- Print helpers -----
   function disableButtons(disabled) {
     document.getElementById("btnMobile").disabled = disabled;
     document.getElementById("btnPc").disabled = disabled;
   }
 
   async function postQuickPrint(action) {
-  const payload = {
-    brand: document.getElementById("brand").value.trim(),
-    mrp: document.getElementById("mrp").value.trim(),
-    bought: document.getElementById("bought").value.trim(),
-    sp: document.getElementById("sp").value.trim(),
-    size: document.getElementById("size").value.trim(),
-    category: document.getElementById("category").value.trim(),
-    copies: document.getElementById("copies").value || "1",
-    action
-  };
+    const payload = {
+      brand: document.getElementById("brand").value.trim(),
+      mrp: document.getElementById("mrp").value.trim(),
+      bought: document.getElementById("bought").value.trim(),
+      sp: document.getElementById("sp").value.trim(),
+      size: document.getElementById("size").value.trim(),
+      category: document.getElementById("category").value.trim(),
+      copies: document.getElementById("copies").value || "1",
+      action
+    };
 
-  if (!payload.brand || !payload.size || !payload.category) {
-    alert("Please fill Brand, Size and Category.");
-    return;
-  }
-
-  const url = "{{ url_for('labels.quick_print') }}";
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(payload)
-    });
-
-    const text = await resp.text();  // read body once
-    let data = null;
-    try { data = JSON.parse(text); } catch (_) {}
-
-    if (!resp.ok) {
-      alert(`HTTP ${resp.status}\n` + (data?.error || text.slice(0, 500)));
-      return;
-    }
-    if (!data || data.ok !== true) {
-      alert("Server error: " + (data?.error || text.slice(0, 500)));
+    if (!payload.brand || !payload.size || !payload.category) {
+      alert("Please fill Brand, Size and Category.");
       return;
     }
 
-    if (action === "mobile") {
-      if (data.deeplink) {
-        window.location.href = data.deeplink;
-      } else {
-        alert("No deeplink in response.");
+    try {
+      const resp = await fetch(URL_QUICK_PRINT, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+
+      const text = await resp.text();  // read body once
+      let data = null;
+      try { data = JSON.parse(text); } catch (_) {}
+
+      if (!resp.ok) {
+        alert(`HTTP ${resp.status}\n` + (data?.error || text.slice(0, 500)));
+        return;
       }
-    } else {
-      alert("Sent to printer" + (data.code ? ` (code: ${data.code})` : ""));
+      if (!data || data.ok !== true) {
+        alert("Server error: " + (data?.error || text.slice(0, 500)));
+        return;
+      }
+
+      if (action === "mobile") {
+        if (data.deeplink) {
+          window.location.href = data.deeplink;
+        } else {
+          alert("No deeplink in response.");
+        }
+      } else {
+        alert("Sent to printer" + (data.code ? ` (code: ${data.code})` : ""));
+      }
+
+      // After success, refresh so the row appears under Recent Barcodes
+      window.location.reload();
+
+    } catch (e) {
+      alert("Network error: " + e);
+    }
+  }
+
+  // ===== Unique barcode: check & save (no print) =====
+  const uniqueCode   = document.getElementById("uniqueCode");
+  const uniqueHint   = document.getElementById("uniqueHint");
+  const btnSaveOnly  = document.getElementById("btnSaveOnly");
+
+  let codeOK = false;
+  let codeTimer = null;
+
+  function normCode(s){
+    return (s || "").toUpperCase().replace(/[^A-Z0-9\-_]/g, "").slice(0, 40);
+  }
+
+  async function checkCode(code){
+    if (!code) {
+      codeOK = false;
+      uniqueHint.textContent = "";
+      btnSaveOnly.disabled = true;
+      return;
+    }
+    uniqueHint.textContent = "Checking...";
+    uniqueHint.style.color = "";
+    btnSaveOnly.disabled = true;
+    try {
+      const existsUrl = URL_BARCODES_EXISTS_TMPL.replace("__CODE__", encodeURIComponent(code));
+      const r = await fetch(existsUrl);
+      const j = await r.json();
+      if (!j.ok) throw new Error("bad response");
+      if (j.exists) {
+        codeOK = false;
+        uniqueHint.textContent = "Already exists";
+        uniqueHint.style.color = "#d32f2f";
+      } else {
+        codeOK = true;
+        uniqueHint.textContent = "Available";
+        uniqueHint.style.color = "#2e7d32";
+        btnSaveOnly.disabled = false;
+      }
+    } catch {
+      codeOK = false;
+      uniqueHint.textContent = "Error";
+      uniqueHint.style.color = "#d32f2f";
+    }
+  }
+
+  uniqueCode.addEventListener("input", () => {
+    const v = normCode(uniqueCode.value);
+    if (uniqueCode.value !== v) uniqueCode.value = v;
+
+    codeOK = false;
+    btnSaveOnly.disabled = true;
+    uniqueHint.textContent = v ? "Checking..." : "";
+    uniqueHint.style.color = "";
+
+    clearTimeout(codeTimer);
+    if (v) codeTimer = setTimeout(() => checkCode(v), 300);
+  });
+
+  btnSaveOnly.addEventListener("click", async () => {
+    if (!codeOK) return;
+
+    const payload = {
+      brand:     document.getElementById("brand").value.trim(),
+      mrp:       document.getElementById("mrp").value.trim(),
+      bought:    document.getElementById("bought").value.trim(),
+      sp:        document.getElementById("sp").value.trim(),
+      size:      document.getElementById("size").value.trim(),
+      category:  document.getElementById("category").value.trim(),
+      code:      uniqueCode.value.trim()
+    };
+
+    if (!payload.brand || !payload.size || !payload.category) {
+      alert("Please fill Brand, Size, and Category.");
+      return;
     }
 
-    // After success, refresh so the row appears under Recent Barcodes
-    window.location.reload();
+    try {
+      btnSaveOnly.disabled = true;
+      const resp = await fetch(URL_BARCODES_CREATE, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
 
-  } catch (e) {
-    alert("Network error: " + e);
-  }
-}
+      const text = await resp.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (_) {}
 
+      if (!resp.ok || !data?.ok) {
+        alert(data?.error || text.slice(0, 500));
+        btnSaveOnly.disabled = !codeOK; // re-enable if still valid
+        return;
+      }
+
+      alert("Saved to barcode catalog.");
+      window.location.reload(); // show in Recent Barcodes
+    } catch (e) {
+      alert("Network error: " + e);
+      btnSaveOnly.disabled = !codeOK;
+    }
+  });
+
+  // Hook up print buttons (keep at end)
   document.getElementById("btnMobile").addEventListener("click", () => postQuickPrint("mobile"));
   document.getElementById("btnPc").addEventListener("click", () => postQuickPrint("pc"));
 
+  // Initial focus
   if (!document.getElementById("brand").value) {
     document.getElementById("brand").focus();
   }
