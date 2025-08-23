@@ -101,6 +101,8 @@
   <button id="btnProceed" class="btn-green">Proceed</button>
   
   <button id="btnPrint" class="btn-gray" disabled>Print</button>
+  <button id="btnAndroidPrint" class="btn-blue" disabled>Print to Android</button>
+
 
 
   <button id="btnClear" class="btn-warn">Clear</button>
@@ -401,6 +403,25 @@ proceedBtn.addEventListener('click', async ()=>{
     if (!j.ok) { alert(j.error || 'Checkout failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
 
     lastInvoiceId = j.invoice_id;
+    const androidBtn = document.getElementById('btnAndroidPrint');
+    androidBtn.disabled = false;
+    androidBtn.onclick = () => {
+      if (!lastInvoiceId) { alert('Please click Proceed first.'); return; }
+
+      // Build deep link to MainActivity (Chrome must open via a link/click)
+      const base = window.location.origin; // e.g., https://your-app.onrender.com
+      const dl = `tspl://receipt?base=${encodeURIComponent(base)}&id=${encodeURIComponent(lastInvoiceId)}&copies=1`;
+
+      // Try the custom scheme first
+      window.location.href = dl;
+
+      // Fallback: Android intent link (helps some Chrome versions)
+      setTimeout(() => {
+        const intent = `intent://receipt?base=${encodeURIComponent(base)}&id=${encodeURIComponent(lastInvoiceId)}&copies=1#Intent;scheme=tspl;package=com.drip.tsplprint;end`;
+        window.location.href = intent;
+      }, 800);
+    };
+
     document.getElementById('invoicePreview').textContent = j.invoice_text;
     const printBtn = document.getElementById('btnPrint');
     printBtn.href = '{{ url_for("print_invoice", invoice_id="__ID__") }}'.replace('__ID__', lastInvoiceId);

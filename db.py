@@ -1,6 +1,13 @@
-import psycopg2
+# db.py
 import os
+import psycopg2
 
-DATABASE_URL ="postgresql://postgres.pvhadjtnenzidnkarvxg:Invalid.55@aws-1-us-east-2.pooler.supabase.com:6543/postgres"
+# Use env var if set; otherwise fall back to your local DSN
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://drip:Invalid.55@127.0.0.1:5432/dripdb?sslmode=disable"
+)
+
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    # Do NOT force sslmode here; let it come from the URL
+    return psycopg2.connect(DATABASE_URL)
