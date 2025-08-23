@@ -210,7 +210,6 @@ function invalidateCheckout() {
 // ---------- Totals ----------
 function recalc() {
   subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
-  const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
 
   let discountAmt = 0;
@@ -222,17 +221,12 @@ function recalc() {
       const flat = parseFloat(appliedDiscount);
       if (!isNaN(flat) && flat >= 0) discountAmt = Math.min(flat, subtotal);
     }
-    // Enforce MAX rule for all discounts
-    const finalCandidate = subtotal - discountAmt;
-    if (finalCandidate < (boughtTotal + 250)) {
-      // do not apply if threshold broken
-      discountAmt = 0;
-    }
   }
 
   finalTotal = Math.max(0, subtotal - discountAmt);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
+
 
 // ---------- Cart rendering ----------
 function renderCart() {
@@ -298,13 +292,9 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
-  const finalCandidate = subtotalLocal - discountAmt;
 
-  if (finalCandidate < (boughtTotal + 250)) {
-    alert('Maximum discount reached.');
-    return; // do not apply
-  }
 
+  
   // Store normalized percent (e.g., "15%")
   appliedDiscount = `${pct}%`;
   recalc(); 
