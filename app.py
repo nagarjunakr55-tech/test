@@ -47,7 +47,7 @@ def create_app() -> Flask:
     @app.post("/admin/login")
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
-        expected = os.getenv("ADMIN_PIN", "1234")
+        expected = os.getenv("ADMIN_PIN", "5175")
         if pin == expected:
             session["is_admin"] = True
             return redirect(url_for("history"))
@@ -60,30 +60,59 @@ def create_app() -> Flask:
         return redirect(url_for("history"))
 
     # Admin actions used by history.html
+    from decimal import Decimal, InvalidOperation
+
     @app.post("/invoices/<invoice_id>/update_total")
     def invoices_update_total(invoice_id):
         require_admin()
+        raw = (request.form.get("grand_total") or "").strip()
         try:
-            new_total = float((request.form.get("grand_total") or "").strip())
-        except ValueError:
+            new_total = Decimal(raw)
+            if new_total < 0:
+                raise InvalidOperation
+        except InvalidOperation:
             return redirect(url_for("history", err="badtotal"))
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE invoices SET grand_total=%s WHERE invoice_id=%s",
-                    (new_total, invoice_id),
-                )
-            conn.commit()
-        return redirect(url_for("history"))
+
+        conn = get_connection()
+        try:
+            with conn:  # psycopg2: commit on success, rollback on exception
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE public.sales_history SET grand_total=%s WHERE invoice_id=%s",
+                        (new_total, invoice_id),
+                    )
+                    # if cur.rowcount == 0:
+                    #     return redirect(url_for("history", err="notfound"))
+            return redirect(url_for("history"))
+        finally:
+            conn.close()
+
+
+
 
     @app.post("/invoices/<invoice_id>/delete")
     def invoices_delete(invoice_id):
         require_admin()
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM invoices WHERE invoice_id=%s", (invoice_id,))
-            conn.commit()
-        return redirect(url_for("history"))
+        conn = get_connection()  # psycopg2 connection
+        try:
+            with conn:  # commit on success, rollback on exception
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM public.sales_history WHERE invoice_id = %s",
+                        (invoice_id,)
+                    )
+                    # Optional: if nothing deleted, show 404/flash
+                    # if cur.rowcount == 0:
+                    #     abort(404, description="Invoice not found")
+            return redirect(url_for("history"))
+        except Exception:
+            current_app.logger.exception("Delete failed for %s", invoice_id)
+            abort(500, description="Delete failed")
+        finally:
+            conn.close()
+
+
+
 
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
