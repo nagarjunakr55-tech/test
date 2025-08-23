@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 {% block content %}
 <h2>Billing</h2>
@@ -327,6 +328,7 @@ async function addBarcode() {
     upsertCartItem(j.item);
   } catch { alert('Network error'); }
 }
+
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
 document.getElementById('btnBarcode').addEventListener('click', addBarcode);
 
