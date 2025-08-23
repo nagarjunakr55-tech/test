@@ -169,9 +169,9 @@ def labels_page():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT brand, mrp, bought_price, selling_price, size, category, barcode_data, created_at
-                  FROM barcode_catalog
-                 ORDER BY id DESC
-                 LIMIT 100
+                FROM barcode_catalog
+                ORDER BY created_at DESC NULLS LAST, id DESC
+                LIMIT 100
             """)
             rows = cur.fetchall()
 
