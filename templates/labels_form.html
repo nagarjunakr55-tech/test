@@ -212,13 +212,17 @@
 
     if (action === "mobile") {
       if (data.deeplink) {
-        window.location.href = data.deeplink; // open Android app
+        window.location.href = data.deeplink;
       } else {
         alert("No deeplink in response.");
       }
     } else {
       alert("Sent to printer" + (data.code ? ` (code: ${data.code})` : ""));
     }
+
+    // After success, refresh so the row appears under Recent Barcodes
+    window.location.reload();
+
   } catch (e) {
     alert("Network error: " + e);
   }

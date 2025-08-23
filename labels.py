@@ -226,19 +226,18 @@ from urllib.parse import quote as urlquote  # make sure this import exists at to
 
 @labels_bp.post("/quick_print", endpoint="quick_print")
 def quick_print():
-    """
-    JSON or form body:
-      brand, mrp, bought, sp, size, category, copies, action=('mobile'|'pc')
-    Returns JSON always: { ok, deeplink?, code?, error? }
-    """
     try:
         data = request.get_json(silent=True) or request.form or {}
+
         brand = (data.get("brand") or "").strip()
         size = (data.get("size") or "").strip()
         category = (data.get("category") or "").strip()
-        mrp = safe_float(data.get("mrp"))
+
+        # HTML posts these names: mrp, bought, sp
+        mrp    = safe_float(data.get("mrp"))
         bought = safe_float(data.get("bought"))
-        sp = safe_float(data.get("sp"))
+        sp     = safe_float(data.get("sp"))
+
         try:
             copies = int((data.get("copies") or 1) or 1)
         except Exception:
@@ -248,23 +247,21 @@ def quick_print():
         if not brand or not size or not category:
             return jsonify({"ok": False, "error": "Missing brand/size/category"}), 400
 
-        # --- find or create code (guarded) ---
+        # --- FIND or INSERT ---
         try:
             code = find_existing_code(brand, size, category, mrp, bought, sp)
-        except Exception as e:
+        except Exception:
             current_app.logger.exception("find_existing_code failed")
             code = None
 
         if not code:
-            import random, string
             code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
             try:
-                insert_code(brand, size, category, mrp, bought, sp, code)
+                insert_code(brand, size, category, mrp, bought, sp, code)  # commits inside
             except Exception:
-                # don't fail printing just because insert failed
                 current_app.logger.exception("insert_code failed (continuing)")
 
-        # --- build TSPL (guarded) ---
+        # --- Build TSPL (with copies embedded) ---
         try:
             tspl = tspl_for_item(code, brand, size, mrp, sp, copies=copies)
         except Exception:
@@ -277,19 +274,18 @@ BARCODE 40,40,"128",50,1,0,2,2,"{code}"
 TEXT 40,100,"2",0,1,1,"Code: {code}"
 PRINT {max(1, copies)},1
 """
-
         tspl = _to_crlf(tspl)
 
+        # --- Action: mobile vs pc ---
         if action == "mobile":
-            base = request.url_root.rstrip("/")  # e.g. https://example.com
+            base = request.url_root.rstrip("/")
             deeplink = f"tspl://print?base={urlquote(base)}&code={urlquote(code)}&copies={copies}"
             return jsonify({"ok": True, "deeplink": deeplink, "code": code}), 200
 
         elif action == "pc":
-            # Only works on Windows with pywin32 installed
             try:
                 printer_name = current_app.config.get("DEFAULT_PRINTER_NAME", "4BARCODE 4B-2034PA")
-                print_tspl_windows(tspl, printer_name)  # sends ONCE; PRINT {copies},1 inside
+                print_tspl_windows(tspl, printer_name)
                 return jsonify({"ok": True, "code": code}), 200
             except Exception as e:
                 current_app.logger.exception("print_tspl_windows failed")
@@ -299,7 +295,7 @@ PRINT {max(1, copies)},1
             return jsonify({"ok": False, "error": "Unknown action"}), 400
 
     except Exception as e:
-        # Last-resort catch: ALWAYS return JSON (not HTML)
         current_app.logger.exception("quick_print crashed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
 
