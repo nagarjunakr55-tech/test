@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Print on Android</title></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui">
+  <button style="font-size:20px;padding:14px 26px;border-radius:12px;border:1px solid #ccc;background:#f7f7f7"
+          onclick="location.href='drip://receipt?base={{ request.url_root.rstrip('/') }}&code={{ invoice_id }}'">
+    Print on Android
+  </button>
+</body>
+</html>
