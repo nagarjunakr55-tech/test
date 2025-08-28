@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from flask import (
-    Flask, render_template, request, redirect, url_for, jsonify, abort, session
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session,Response
 )
 
 from logic.billing_logic import (
@@ -107,38 +107,34 @@ def create_app() -> Flask:
                         "UPDATE public.sales_history SET grand_total=%s WHERE invoice_id=%s",
                         (new_total, invoice_id),
                     )
-                    # if cur.rowcount == 0:
-                    #     return redirect(url_for("history", err="notfound"))
             return redirect(url_for("history"))
         finally:
             conn.close()
 
+    # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
+    PUBLIC_PREFIXES = (
+        "/receipt/lines/",   # <-- allow Android to fetch plain lines
+        "/health", "/healthz", "/diag",
+    )
 
+    @app.before_request
+    def allow_public_endpoints():
+        p = request.path or ""
+        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
+            # skip any auth/redirect logic for these endpoints
+            return
+        # If you enforce login anywhere, it must live BELOW this guard, e.g.:
+        # if not session.get("user_id"):
+        #     return redirect(url_for("login", next=request.full_path))
 
-
-    @app.post("/invoices/<invoice_id>/delete")
-    def invoices_delete(invoice_id):
-        require_admin()
-        conn = get_connection()  # psycopg2 connection
-        try:
-            with conn:  # commit on success, rollback on exception
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "DELETE FROM public.sales_history WHERE invoice_id = %s",
-                        (invoice_id,)
-                    )
-                    # Optional: if nothing deleted, show 404/flash
-                    # if cur.rowcount == 0:
-                    #     abort(404, description="Invoice not found")
-            return redirect(url_for("history"))
-        except Exception:
-            current_app.logger.exception("Delete failed for %s", invoice_id)
-            abort(500, description="Delete failed")
-        finally:
-            conn.close()
-
-
-
+    @app.get("/receipt/lines/<invoice_id>.txt")
+    def receipt_lines(invoice_id):
+        invoice = get_invoice_text(invoice_id)
+        if not invoice:
+            abort(404, f"Invoice {invoice_id} not found")
+        body = invoice if invoice.endswith("\n") else invoice + "\n"
+        return Response(body, mimetype="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
 
     # --- Blueprints ---
     app.register_blueprint(labels_bp)

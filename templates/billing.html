@@ -404,23 +404,29 @@ proceedBtn.addEventListener('click', async ()=>{
 
     lastInvoiceId = j.invoice_id;
     const androidBtn = document.getElementById('btnAndroidPrint');
-    androidBtn.disabled = false;
-    androidBtn.onclick = () => {
-      if (!lastInvoiceId) { alert('Please click Proceed first.'); return; }
+androidBtn.disabled = false;
+androidBtn.onclick = () => {
+  if (!lastInvoiceId) { alert('Please click Proceed first.'); return; }
 
-      // Build deep link to MainActivity (Chrome must open via a link/click)
-      const base = window.location.origin; // e.g., https://your-app.onrender.com
-      const dl = `tspl://receipt?base=${encodeURIComponent(base)}&id=${encodeURIComponent(lastInvoiceId)}&copies=1`;
+  const base = window.location.origin;
 
-      // Try the custom scheme first
-      window.location.href = dl;
+  // If you have a copies input, read it; otherwise default to 1
+  const copiesEl = document.getElementById('printCopies');
+  const copies = copiesEl ? Math.max(1, parseInt(copiesEl.value || '1', 10)) : 1;
 
-      // Fallback: Android intent link (helps some Chrome versions)
-      setTimeout(() => {
-        const intent = `intent://receipt?base=${encodeURIComponent(base)}&id=${encodeURIComponent(lastInvoiceId)}&copies=1#Intent;scheme=tspl;package=com.drip.tsplprint;end`;
-        window.location.href = intent;
-      }, 800);
-    };
+  // New TSPL deep link → handled by handleTsplDeepLink() on Android
+  const dl = `tspl://print?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}&copies=${copies}`;
+  window.location.href = dl;
+
+  // Fallback intent form
+  setTimeout(() => {
+    const intent =
+      `intent://print?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}&copies=${copies}` +
+      `#Intent;scheme=tspl;package=com.drip.tsplprint;end`;
+    window.location.href = intent;
+  }, 800);
+};
+
 
     document.getElementById('invoicePreview').textContent = j.invoice_text;
     const printBtn = document.getElementById('btnPrint');

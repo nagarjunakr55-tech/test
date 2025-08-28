@@ -226,7 +226,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     # --- Header (shop name + address, centered) ---
     header = [
         "DRIP",
-        "",
+       
         "#6-2-52,",
         "D L Road, Hindupur,",
         "Satya Sai (D), AP-515201",
@@ -284,12 +284,28 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
 
     lines.append("-" * COLS)
     # No "Subtotal" (as requested)
+    # --- after: lines.append("-" * COLS) and before printing Discount/Total ---
+    LBL_W = 18  # left label width used below
+
+    # compute effective % from amount (works because you only use % discounts)
+    disc_pct_text = ""
+    if subtotal and float(discount_amt) > 0:
+        eff = (float(discount_amt) / float(subtotal)) * 100.0
+        # show as integer if it’s clean (e.g., 10,15,20,25), else 1 decimal
+        disc_pct_text = f" ({int(round(eff))}%)" if abs(eff - round(eff)) < 0.01 else f" ({eff:.1f}%)"
+
     if discount_amt and float(discount_amt) > 0:
-        lines.append(f"{'Discount':<18}{('-' + format(discount_amt, '.2f')).rjust(COLS-18)}")
-    lines.append(f"{'Grand Total':<18}{format(grand_total, '.2f').rjust(COLS-18)}")
+        label = f"Discount{disc_pct_text}"
+        lines.append(f"{clamp(label, LBL_W)}{('-' + format(discount_amt, '.2f')).rjust(COLS - LBL_W)}")
+
+
+    total_label = "Total"
+    lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
+
     lines.append("-" * COLS)
 
     lines.append("Thank you for shopping with DRIP!".center(COLS))
+    lines.append(" " * COLS)
 
     return "\n".join(lines)
 
