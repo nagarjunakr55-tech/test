@@ -19,8 +19,8 @@ from logic.billing_logic import (
     calculate_totals,
 )
 
-from db import get_connection
 from labels import labels_bp
+from db import get_connection
 
 
 def create_app() -> Flask:
@@ -84,6 +84,18 @@ def create_app() -> Flask:
     def admin_logout():
         session.pop("is_admin", None)
         return redirect(url_for("history"))
+
+    @app.before_request
+    def allow_public_endpoints():
+        p = request.path or ""
+        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
+            # skip any auth/redirect logic for these endpoints
+            return
+        # If you enforce login anywhere, it must live BELOW this guard, e.g.:
+        # if not session.get("user_id"):
+        #     return redirect(url_for("login", next=request.full_path))
+
+    
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
