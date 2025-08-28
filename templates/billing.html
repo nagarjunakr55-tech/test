@@ -290,7 +290,7 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   }
 
   // Only allow 10, 15, 20, 25
-  const ALLOWED = new Set([10,15,20,25]);
+  const ALLOWED = new Set([10,15,20,25,30]);
   if (isNaN(pct) || !ALLOWED.has(pct)) {
     alert('Invalid Code');
     return;
