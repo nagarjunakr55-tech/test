@@ -147,7 +147,7 @@ def generate_unique_invoice_id() -> str:
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
-_ALLOWED_PCTS = {5, 10, 15, 20, 25}
+_ALLOWED_PCTS = {5, 10, 15, 20, 25,30}
 
 # logic/billing_logic.py
 def calculate_totals(items, discount_input: str):
