@@ -2,6 +2,61 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Billing</h2>
+<style>
+/* Base button look */
+button, .btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter .15s ease, transform .02s ease;
+}
+button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; }
+button:hover:not(:disabled), .btn:hover:not(:disabled) { filter: brightness(.95); }
+button:active:not(:disabled), .btn:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible, .btn:focus-visible { outline: 2px solid #111827; outline-offset: 2px; }
+
+/* Existing class styles (kept for consistency) */
+.btn-green { background:#16a34a; color:#fff; }   /* Proceed */
+.btn-gray  { background:#6b7280; color:#fff; }   /* Print */
+.btn-blue  { background:#2563eb; color:#fff; }   /* Print to Android */
+.btn-warn  { background:#ef4444; color:#fff; }   /* Clear */
+.btn-link  { background:transparent; color:#7c3aed; text-decoration:underline; padding:0; }
+
+/* Top-right utility */
+#btnToggleManual { color:#7c3aed; } /* purple link */
+
+/* Barcode row */
+#btnBarcode { background:#2563eb; color:#fff; }   /* blue */
+#btnScan    { background:#14b8a6; color:#fff; }   /* teal */
+
+/* Manual box buttons */
+#btnAdd     { background:#22c55e; color:#fff; }   /* green */
+#btnSearch  { background:#7c3aed; color:#fff; }   /* purple */
+
+/* Search modal actions */
+#sGo        { background:#f59e0b; color:#fff; }   /* amber */
+#sClose     { background:#475569; color:#fff; }   /* slate */
+
+/* Discount */
+#applyDiscount { background:#f97316; color:#fff; } /* orange */
+
+/* Totals/footer buttons (IDs already styled via classes, duplicated for clarity) */
+#btnProceed       { background:#16a34a; color:#fff; }
+#btnPrint         { background:#6b7280; color:#fff; }
+#btnAndroidPrint  { background:#0ea5e9; color:#fff; } /* sky blue */
+#btnClear         { background:#ef4444; color:#fff; }
+
+/* Cart table control buttons */
+#cartTable button[data-act="minus"]  { background:#f59e0b; color:#fff; } /* amber */
+#cartTable button[data-act="plus"]   { background:#22c55e; color:#fff; } /* green */
+#cartTable button[data-act="remove"] { background:#ef4444; color:#fff; } /* red */
+
+/* Buttons rendered inside search results list */
+#sResults button { background:#10b981; color:#fff; } /* emerald */
+</style>
+
 
 <!-- Top-right utility link to show manual add -->
 <div class="row" style="justify-content:flex-end; margin-bottom:6px;">
@@ -100,7 +155,7 @@
 
   <button id="btnProceed" class="btn-green">Proceed</button>
   
-  <button id="btnPrint" class="btn-gray" disabled>Print</button>
+  <!--<button id="btnPrint" class="btn-gray" disabled>Print</button>-->
   <button id="btnAndroidPrint" class="btn-blue" disabled>Print to Android</button>
 
 
