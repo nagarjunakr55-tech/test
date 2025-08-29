@@ -147,6 +147,24 @@ def create_app() -> Flask:
             for r in app.url_map.iter_rules()
         ]}
 
+    @app.post("/invoices/<invoice_id>/delete")
+    def invoices_delete(invoice_id):
+        require_admin()
+        conn = get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # If you have a child table (e.g., sales_items), delete that first
+                    # cur.execute("DELETE FROM public.sales_items WHERE invoice_id=%s", (invoice_id,))
+                    cur.execute(
+                        "DELETE FROM public.sales_history WHERE invoice_id=%s",
+                        (invoice_id,)
+                    )
+            return redirect(url_for("history"))
+        finally:
+            conn.close()
+
+
     @app.get("/__endpoint/<path:endpoint>")
     def __endpoint_locator(endpoint):
         view = app.view_functions.get(endpoint)
