@@ -1,9 +1,56 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Invoice Preview</h2>
-<pre style="font-family:monospace;">{{ invoice }}</pre>
 
+<style>
+  .btn { display:inline-block; padding:8px 12px; border-radius:6px; color:#fff; text-decoration:none; border:none; cursor:pointer; }
+  .btn:disabled { opacity:.6; pointer-events:none; }
+  .btn-gray { background:#616161; }
+  .btn-blue { background:#1976d2; }
+  .btn-green { background:#2e7d32; }
+  .btn-link { background:transparent; color:#1976d2; text-decoration:underline; padding:0; }
+  .btn + .btn { margin-left:8px; }
+  pre.invoice-box { background:#fff; padding:10px; border:1px solid #eee; max-width:720px; overflow:auto; }
+</style>
 
-<button onclick="location.href='{{ url_for('print_invoice', invoice_id=invoice_id) }}'">Print</button>
-<a href="{{ url_for('billing') }}" class="btn">Back</a>
+<div style="margin:10px 0;">
+  <strong>Invoice ID:</strong> {{ invoice_id }}
+</div>
+
+<pre class="invoice-box" style="font-family:monospace; white-space:pre-wrap;">{{ invoice }}</pre>
+
+<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+  <!-- Browser print view -->
+  <a class="btn btn-gray" href="{{ url_for('print_invoice', invoice_id=invoice_id) }}">Print (Browser)</a>
+
+  <!-- Android deep link -->
+  <button id="btnAndroidPrint" class="btn btn-blue" type="button">Print to Android</button>
+
+  <!-- Back to Billing -->
+  <a class="btn btn-green" href="{{ url_for('billing') }}">Back</a>
+</div>
+
+<script>
+(function(){
+  // Wire "Print to Android" using the same scheme your MainActivity handles (LINES -> bitmap path)
+  const invoiceId = "{{ invoice_id }}";
+  const base = window.location.origin;
+  const btn = document.getElementById('btnAndroidPrint');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    // Primary: custom scheme that your Android app (com.drip.tsplprint) handles
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}`;
+    window.location.href = deeplink;
+
+    // Fallback: Android intent URL for Chrome variants
+    setTimeout(() => {
+      const intent =
+        `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
+        `#Intent;scheme=drip;package=com.drip.tsplprint;end`;
+      window.location.href = intent;
+    }, 800);
+  });
+})();
+</script>
 {% endblock %}

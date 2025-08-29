@@ -52,6 +52,14 @@
     e.target.value = e.target.value.toUpperCase();
   });
 </script>
+<style>
+  .sp-input {
+    width: 100px;
+    text-align: right;
+    padding: 4px 6px;
+  }
+</style>
+
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
@@ -80,7 +88,7 @@
         <th style="text-align:left;">Size</th>
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
-        <th style="text-align:right;">SP Price</th>
+        <th style="text-align:right;">Price</th>
         
         <th style="text-align:center;"></th>
       </tr>
@@ -251,8 +259,13 @@ function renderCart() {
         <button data-act="plus" data-i="${idx}">+</button>
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
-      <td style="text-align:right;">${Number(it.price||0).toFixed(2)}</td>
-      
+     <td style="text-align:right;">
+  <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+           inputmode="numeric" pattern="\\d*"
+           value="${parseInt(it.price||0,10)}">
+</td>
+
+
       <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
@@ -266,6 +279,22 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
   if (act === 'plus')  { cart[i].qty = Number(cart[i].qty)+1; renderCart(); }
   if (act === 'remove'){ cart.splice(i,1); renderCart(); }
 });
+// Inline SP Price edit
+document.querySelector('#cartTable').addEventListener('change', (e)=>{
+  if (!e.target.classList.contains('sp-input')) return;
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+
+  const v = parseFloat(e.target.value);
+  if (isNaN(v) || v < 0) {
+    // revert to previous if invalid
+    e.target.value = Number(cart[i].price||0).toFixed(2);
+    return;
+  }
+  cart[i].price = v;      // update SP for this line item
+  renderCart();           // re-render + recompute totals + invalidate checkout
+});
+
 
 // ---------- Apply Discount ----------
 // - typing "25" means 25%
