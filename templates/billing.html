@@ -26,7 +26,7 @@
 
   <button id="btnBarcode" style="background:#1976d2;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Add</button>
 
-  <button id="btnScan" type="button" style="background:#00897b;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Scan</button>
+  <button id="btnScan" type="button">Scan</button>
 
 </div>
 
@@ -157,10 +157,11 @@ function openScanner() {
   setTimeout(() => { /* optional fallback */ }, 1500);
 }
 
-document.getElementById('btnScan').addEventListener('click', (e) => {
-  e.preventDefault();
-  openScanner();
-});
+// Wire the button
+  document.getElementById('btnScan').addEventListener('click', (e) => {
+    e.preventDefault();
+    openScanner();
+  });
 
 /* ===============
    Manual toggles
