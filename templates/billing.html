@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 {% block content %}
 <h2>Billing</h2>
@@ -15,7 +14,7 @@
 
   <label for="custPhone" class="nowrap">Phone</label>
   <input id="custPhone" class="grow" type="tel" inputmode="numeric" pattern="[0-9]*"
-         placeholder="10 digits" maxlength="10" autocomplete="tel"value="9848022338">
+         placeholder="10 digits" maxlength="10" autocomplete="tel" value="9848022338">
 </div>
 
 <!-- Barcode (manual input only) -->
@@ -25,9 +24,9 @@
        placeholder="Enter Barcode" 
        autocomplete="off">
 
-  <button id="btnBarcode">Add</button>
-  <button id="btnScan" type="button">Scan</button>
+  <button id="btnBarcode" style="background:#1976d2;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Add</button>
 
+  <button id="btnScan" type="button">Scan</button>
 </div>
 
 <!-- MANUAL add area (hidden by default) -->
@@ -46,12 +45,14 @@
     <button id="btnSearch">Search Product</button>
   </div>
 </div>
+
 <script>
   // Force barcode input to uppercase
   document.getElementById('barcode').addEventListener('input', e => {
     e.target.value = e.target.value.toUpperCase();
   });
 </script>
+
 <style>
   .sp-input {
     width: 100px;
@@ -59,7 +60,6 @@
     padding: 4px 6px;
   }
 </style>
-
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
@@ -89,7 +89,6 @@
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
         <th style="text-align:right;">Price</th>
-        
         <th style="text-align:center;"></th>
       </tr>
     </thead>
@@ -107,12 +106,8 @@
   <strong id="finalLbl">Final: ₹0.00</strong>
 
   <button id="btnProceed" class="btn-green">Proceed</button>
-  
   <button id="btnPrint" class="btn-gray" disabled>Print</button>
   <button id="btnAndroidPrint" class="btn-blue" disabled>Print to Android</button>
-
-
-
   <button id="btnClear" class="btn-warn">Clear</button>
 </div>
 
@@ -121,62 +116,36 @@
 <pre id="invoicePreview" style="background:#fff;"></pre>
 
 <script>
-  // Build a callback URL back to THIS page (preserves path)
-  function buildCallback() {
-    const url = new URL(window.location.href);
-    // clear any previous code param
-    url.searchParams.delete('code');
-    return url.toString();
-  }
+/* =========================
+   Scanner deep link wiring
+   ========================= */
+function buildCallback() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('code');
+  return url.toString();
+}
 
-  // Launch the Android scanner app via deep link
-  function openScanner() {
-    const cb = encodeURIComponent(buildCallback());
-    const deeplink = `dripscan://scan?callback=${cb}`;
-    // try to open the app
-    window.location.href = deeplink;
+function openScanner() {
+  const cb = encodeURIComponent(buildCallback());
+  const deeplink = `dripscan://scan?callback=${cb}`;
+  window.location.href = deeplink;
+  setTimeout(() => { /* optional fallback */ }, 1500);
+}
 
-    // Optional fallback: if app not installed, show message after a delay
-    setTimeout(() => {
-      // You can show a toast or fallback UI here
-      // alert('Scanner app not available. Please install/open DRIP Scanner.');
-    }, 1500);
-  }
+document.getElementById('btnScan').addEventListener('click', (e) => {
+  e.preventDefault();
+  openScanner();
+});
 
-  // Wire the button
-  document.getElementById('btnScan').addEventListener('click', (e) => {
-    e.preventDefault();
-    openScanner();
-  });
-
-  // On page load: if scanner returned with ?code=..., fill and add
-  (function handleScannerReturn() {
-    const params = new URLSearchParams(window.location.search);
-    const code = (params.get('code') || '').trim();
-    if (code) {
-      const input = document.getElementById('barcode');
-      input.value = code;
-      // call your existing function to look up and add to cart
-      if (typeof addBarcode === 'function') {
-        addBarcode();
-      }
-      // Optional: clean the URL so refreshes don’t double-add
-      params.delete('code');
-      const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-      window.history.replaceState({}, '', clean);
-    }
-  })();
-</script>
-
-<script>
-// ---------- Toggle MANUAL add ----------
+/* ===============
+   Manual toggles
+   =============== */
 document.getElementById('btnToggleManual').addEventListener('click', (e)=>{
   e.preventDefault();
   const box = document.getElementById('manualBox');
   box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
 });
 
-// ---------- Sizes ----------
 const mSize = document.getElementById('mSize');
 const mCategory = document.getElementById('mCategory');
 function refreshSizes() {
@@ -187,13 +156,41 @@ function refreshSizes() {
 mCategory.addEventListener('change', refreshSizes);
 refreshSizes();
 
-// ---------- State ----------
+/* =========
+   State
+   ========= */
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 let lastInvoiceId = null;
-let appliedDiscount = "";  // store as "NN%" or "NN"
+let appliedDiscount = "";  // "NN%" or "NN"
 
-// ---------- Helpers ----------
+// persistence
+const KEY_CART = "drip_cart_v1";
+const KEY_DISC = "drip_discount_v1";
+
+function persistState() {
+  try {
+    localStorage.setItem(KEY_CART, JSON.stringify(cart));
+    localStorage.setItem(KEY_DISC, appliedDiscount || "");
+  } catch {}
+}
+
+function restoreState() {
+  try {
+    const savedCart = localStorage.getItem(KEY_CART);
+    if (savedCart) {
+      const arr = JSON.parse(savedCart);
+      if (Array.isArray(arr)) cart = arr;
+    }
+    const savedDisc = localStorage.getItem(KEY_DISC) || "";
+    appliedDiscount = savedDisc;
+    if (savedDisc) document.getElementById('discount').value = savedDisc;
+  } catch {}
+}
+
+/* =========
+   Helpers
+   ========= */
 function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 function sameKey(a,b){
   return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
@@ -217,7 +214,9 @@ function invalidateCheckout() {
   btn.textContent = 'Proceed';
 }
 
-// ---------- Totals ----------
+/* =========
+   Totals
+   ========= */
 function recalc() {
   subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
@@ -235,8 +234,7 @@ function recalc() {
     // Enforce MAX rule for all discounts
     const finalCandidate = subtotal - discountAmt;
     if (finalCandidate < (boughtTotal + 100)) {
-      // do not apply if threshold broken
-      discountAmt = 0;
+      discountAmt = 0; // block if below threshold
     }
   }
 
@@ -244,7 +242,9 @@ function recalc() {
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
 
-// ---------- Cart rendering ----------
+/* =================
+   Cart rendering
+   ================= */
 function renderCart() {
   const tb = document.querySelector('#cartTable tbody'); tb.innerHTML = '';
   cart.forEach((it, idx) => {
@@ -259,26 +259,26 @@ function renderCart() {
         <button data-act="plus" data-i="${idx}">+</button>
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
-     <td style="text-align:right;">
-  <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-           inputmode="numeric" pattern="\\d*"
-           value="${parseInt(it.price||0,10)}">
-</td>
-
-
+      <td style="text-align:right;">
+        <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+               inputmode="numeric" pattern="\\d*" value="${parseInt(it.price||0,10)}">
+      </td>
       <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
   });
   recalc();
-  invalidateCheckout();  // any cart/discount change cancels previous proceed
+  invalidateCheckout();
+  persistState();
 }
+
 document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const btn = e.target; const act = btn.getAttribute('data-act'); const i = +btn.getAttribute('data-i');
   if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty)-1); if(cart[i].qty===0) cart.splice(i,1); renderCart(); }
   if (act === 'plus')  { cart[i].qty = Number(cart[i].qty)+1; renderCart(); }
   if (act === 'remove'){ cart.splice(i,1); renderCart(); }
 });
+
 // Inline SP Price edit
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('sp-input')) return;
@@ -287,64 +287,56 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
 
   const v = parseFloat(e.target.value);
   if (isNaN(v) || v < 0) {
-    // revert to previous if invalid
     e.target.value = Number(cart[i].price||0).toFixed(2);
     return;
   }
-  cart[i].price = v;      // update SP for this line item
-  renderCart();           // re-render + recompute totals + invalidate checkout
+  cart[i].price = v;
+  renderCart();
 });
 
-
-// ---------- Apply Discount ----------
-// - typing "25" means 25%
-// - typing "25%" also ok
-// - MAX rule enforced for ALL discounts: final >= bought_total + 100
-
+/* =================
+   Discount controls
+   ================= */
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
-  if (!raw){ 
-    appliedDiscount = ""; 
-    recalc(); 
-    invalidateCheckout(); 
-    return; 
-  }
-
-  // Normalize to percent value
-  let pct;
-  if (raw.endsWith('%')) {
-    pct = parseFloat(raw.slice(0,-1));
-  } else {
-    pct = parseFloat(raw);
-  }
-
-  // Only allow 10, 15, 20, 25
-  const ALLOWED = new Set([10,15,20,25,30]);
-  if (isNaN(pct) || !ALLOWED.has(pct)) {
-    alert('Invalid Code');
+  if (!raw){
+    appliedDiscount = "";
+    recalc();
+    invalidateCheckout();
+    persistState();
     return;
   }
 
-  // Enforce MAX rule before applying
+  let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
+  const ALLOWED = new Set([10,15,20,25,30]);
+  if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
+
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
+  if (finalCandidate < (boughtTotal + 100)) { alert('Maximum discount reached.'); return; }
 
-  if (finalCandidate < (boughtTotal + 100)) {
-    alert('Maximum discount reached.');
-    return; // do not apply
-  }
-
-  // Store normalized percent (e.g., "15%")
   appliedDiscount = `${pct}%`;
-  recalc(); 
+  recalc();
   invalidateCheckout();
+  persistState();
 });
 
+// Clear discount as soon as the field is emptied
+document.getElementById('discount').addEventListener('input', () => {
+  const raw = (document.getElementById('discount').value || '').trim();
+  if (!raw) {
+    appliedDiscount = "";
+    recalc();
+    invalidateCheckout();
+    persistState();
+  }
+});
 
-
-// ---------- Barcode (manual) ----------
+/* =================
+   Barcode handlers
+   ================= */
 async function addBarcode() {
   const code = document.getElementById('barcode').value.trim();
   document.getElementById('barcode').value = '';
@@ -363,7 +355,9 @@ async function addBarcode() {
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
 document.getElementById('btnBarcode').addEventListener('click', addBarcode);
 
-// ---------- Manual add ----------
+/* ==================
+   Manual add/search
+   ================== */
 document.getElementById('btnAdd').addEventListener('click', ()=>{
   const brand = document.getElementById('mBrand').value.trim();
   const price = parseFloat(document.getElementById('mPrice').value||0);
@@ -375,7 +369,6 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 
-// ---------- Search modal ----------
 document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
 document.getElementById('sClose').addEventListener('click', ()=> document.getElementById('searchModal').style.display='none');
 document.getElementById('sGo').addEventListener('click', async ()=>{
@@ -395,7 +388,9 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   });
 });
 
-// ---------- Autofill name by phone ----------
+/* ==========================
+   Autofill name by phone #
+   ========================== */
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
   const ph = e.target.value.replace(/\D/g,'').slice(0,10); e.target.value = ph;
   if (ph.length === 10) {
@@ -404,7 +399,9 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
   }
 });
 
-// ---------- Proceed (save + preview) ----------
+/* ==========================
+   Proceed / Print / Clear
+   ========================== */
 const proceedBtn = document.getElementById('btnProceed');
 proceedBtn.addEventListener('click', async ()=>{
   if (proceedBtn.disabled) return;
@@ -425,7 +422,7 @@ proceedBtn.addEventListener('click', async ()=>{
         bought_price: Number(i.bought_price||0),
         price: Number(i.price||0)
       })),
-      discount: appliedDiscount  // "NN%" or "NN"
+      discount: appliedDiscount
     };
     const res = await fetch('{{ url_for("api_checkout") }}', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const j = await res.json();
@@ -434,7 +431,6 @@ proceedBtn.addEventListener('click', async ()=>{
     lastInvoiceId = j.invoice_id;
     wireAndroidPrint(lastInvoiceId);     
     document.getElementById('invoicePreview').textContent = j.invoice_text;
-    const printBtn = document.getElementById('btnPrint');
     setPrintEnabled(true);
     proceedBtn.textContent = 'Proceeded';
   
@@ -443,15 +439,18 @@ proceedBtn.addEventListener('click', async ()=>{
   }
 });
 
-// ---------- Print guard ----------
 document.getElementById('btnPrint').addEventListener('click', (e)=>{
   if (!lastInvoiceId) { e.preventDefault(); alert('Please click Proceed first.'); }
 });
 
-// ---------- Clear ----------
 document.getElementById('btnClear').addEventListener('click', ()=>{
-  cart = []; renderCart(); document.getElementById('discount').value = ''; appliedDiscount = "";
-  document.getElementById('invoicePreview').textContent = ''; lastInvoiceId = null; setPrintEnabled(false);
+  appliedDiscount = "";
+  document.getElementById('discount').value = '';
+  cart = [];
+  renderCart(); // recalc + persist inside
+  document.getElementById('invoicePreview').textContent = '';
+  lastInvoiceId = null;
+  setPrintEnabled(false);
 });
 
 function wireAndroidPrint(invoiceId) {
@@ -461,7 +460,7 @@ function wireAndroidPrint(invoiceId) {
   if (!invoiceId) return;
 
   btn.onclick = () => {
-    const base = window.location.origin; // must serve /receipt/lines/<id>.txt
+    const base = window.location.origin;
     const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}`;
     window.location.href = dl;
     setTimeout(() => {
@@ -473,8 +472,23 @@ function wireAndroidPrint(invoiceId) {
   };
 }
 
+/* =========
+   Init
+   ========= */
+(function init(){
+  restoreState();
+  renderCart();
 
-// ---------- Init ----------
-(function init(){ renderCart(); })();
+  // Handle scanner return AFTER state/functions exist
+  const params = new URLSearchParams(window.location.search);
+  const code = (params.get('code') || '').trim();
+  if (code) {
+    document.getElementById('barcode').value = code;
+    if (typeof addBarcode === 'function') addBarcode();
+    params.delete('code');
+    const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', clean);
+  }
+})();
 </script>
 {% endblock %}
