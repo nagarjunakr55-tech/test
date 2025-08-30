@@ -24,8 +24,10 @@
        placeholder="Enter Barcode" 
        autocomplete="off">
 
-  <button id="btnBarcode" style="background:#1976d2;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Add</button>
-
+  <button id="btnBarcode"
+  style="background:#1976d2;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Add
+</button>
   <button id="btnScan" type="button"
   style="background:#00897b;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
   Scan
@@ -57,12 +59,21 @@
   });
 </script>
 
-<style>
-  .sp-input {
-    width: 100px;
+
+  <style>
+  .sp-input{
+    width: 6ch;          /* ~4 digits + padding/spinners */
+    max-width: 6ch;
+    min-width: 6ch;
     text-align: right;
-    padding: 4px 6px;
+    padding: 2px 4px;
   }
+  /* optional: hide number spinners so width stays tight */
+  .sp-input::-webkit-outer-spin-button,
+  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .sp-input[type=number] { -moz-appearance: textfield; }
+
+
 </style>
 
 <!-- Search modal -->
@@ -104,15 +115,27 @@
 <div class="row" style="margin-top:10px;">
   <label for="discount" class="nowrap">Discount</label>
   <input id="discount" class="input-sm"  autocomplete="off" inputmode="decimal">
-  <button id="applyDiscount">Discount</button>
-
+  <button id="applyDiscount"
+  style="background:#6d4c41;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Discount
+</button>
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
-  <button id="btnProceed" class="btn-green">Proceed</button>
-  <button id="btnPrint" class="btn-gray" disabled>Print</button>
-  <button id="btnAndroidPrint" class="btn-blue" disabled>Print to Android</button>
-  <button id="btnClear" class="btn-warn">Clear</button>
+  <button id="btnProceed"
+  style="background:#2e7d32;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Proceed
+</button>
+  <!-- <button id="btnPrint" class="btn-gray" disabled>Print</button>-->
+  <button id="btnAndroidPrint"
+  style="background:#1976d2;color:#fff;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;"
+  disabled>
+  Print
+</button>
+  <a href="{{ url_for('history') }}" class="btn"
+  style="background:#757575;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
+  Clear
+</a>
 </div>
 
 <!-- Invoice preview -->
