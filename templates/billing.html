@@ -54,12 +54,19 @@
 </script>
 
 <style>
-  .sp-input {
-    width: 100px;
+  .sp-input{
+    width: 6ch;          /* ~4 digits + padding/spinners */
+    max-width: 6ch;
+    min-width: 6ch;
     text-align: right;
-    padding: 4px 6px;
+    padding: 2px 4px;
   }
+  /* optional: hide number spinners so width stays tight */
+  .sp-input::-webkit-outer-spin-button,
+  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .sp-input[type=number] { -moz-appearance: textfield; }
 </style>
+
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
