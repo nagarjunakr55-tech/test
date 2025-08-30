@@ -4,20 +4,32 @@
 
 <form method="post" action="{{ url_for('history') }}" style="margin-bottom:15px;">
   <input type="text" name="search" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
-  <button type="submit">Search</button>
-  <a href="{{ url_for('history') }}" class="btn">Clear</a>
+  <button type="submit"
+  style="background:#1976d2;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Search
+</button>
+  <a href="{{ url_for('history') }}" class="btn"
+  style="background:#757575;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
+  Clear
+</a>
 </form>
 
 <!-- Admin login/logout -->
 <div style="margin:10px 0;">
   {% if is_admin %}
     <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline;">
-      <button class="btn" type="submit">Logout Admin</button>
+      <button class="btn" type="submit"
+  style="background:#d32f2f;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Logout Admin
+</button>
     </form>
   {% else %}
     <form method="post" action="{{ url_for('admin_login') }}" style="display:inline; gap:6px;">
       <input type="password" name="pin" placeholder="Admin PIN" style="padding:6px;">
-      <button class="btn" type="submit">Login Admin</button>
+      <button class="btn" type="submit"
+  style="background:#d32f2f;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
+  Logout Admin
+</button>
     </form>
     {% if request.args.get('err') == 'badpin' %}
       <span style="color:#d32f2f; margin-left:8px;">Invalid PIN</span>
@@ -58,7 +70,10 @@
           {% endif %}
         </td>
         <td>
-          <a class="btn" href="{{ url_for('reprint', invoice_id=row[0]) }}">Reprint</a>
+          <a class="btn" href="{{ url_for('reprint', invoice_id=row[0]) }}"
+  style="background:#6a1b9a;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
+  Reprint
+</a>
         </td>
 
         {% if is_admin %}
