@@ -83,7 +83,7 @@ def create_app() -> Flask:
     @app.post("/admin/logout")
     def admin_logout():
         session.pop("is_admin", None)
-        return redirect(url_for("history"))
+        return redirect(_next_url_fallback())
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
