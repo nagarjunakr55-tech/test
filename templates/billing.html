@@ -27,7 +27,6 @@
   <button id="btnBarcode" style="background:#1976d2;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Add</button>
 
   <button id="btnScan" type="button">Scan</button>
-
 </div>
 
 <!-- MANUAL add area (hidden by default) -->
@@ -42,12 +41,8 @@
     <input id="mQty" type="number" min="1" step="1" value="1" style="width:90px;">
   </div>
   <div class="row" style="margin-top:6px;">
-   <button id="btnAdd"
-  style="background:#6d4c41;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">
-  Add
-</button>
-
-    <!--<button id="btnSearch">Search Product</button>-->
+    <button id="btnAdd">Add</button>
+    <button id="btnSearch">Search Product</button>
   </div>
 </div>
 
@@ -59,19 +54,12 @@
 </script>
 
 <style>
-  .sp-input{
-    width: 6ch;          /* ~4 digits + padding/spinners */
-    max-width: 6ch;
-    min-width: 6ch;
+  .sp-input {
+    width: 100px;
     text-align: right;
-    padding: 2px 4px;
+    padding: 4px 6px;
   }
-  /* optional: hide number spinners so width stays tight */
-  .sp-input::-webkit-outer-spin-button,
-  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .sp-input[type=number] { -moz-appearance: textfield; }
 </style>
-
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
@@ -112,28 +100,15 @@
 <div class="row" style="margin-top:10px;">
   <label for="discount" class="nowrap">Discount</label>
   <input id="discount" class="input-sm"  autocomplete="off" inputmode="decimal">
-  <button id="applyDiscount" style="background:#ef6c00;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Discount</button>
+  <button id="applyDiscount">Discount</button>
 
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
-  <button id="btnProceed" class="btn-green" style="background:#2e7d32;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Proceed</button>
-  <!-- <button id="btnPrint"
-  style="background:#607d8b;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;"
-  disabled>
-  Print
-</button>-->
-
-  <button id="btnAndroidPrint"
-  style="background:#1976d2;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;"
-  disabled>
-  Print
-</button>
-  <button id="btnClear"
-  style="background:#9e9e9e;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">
-  Clear
-</button>
-
+  <button id="btnProceed" class="btn-green">Proceed</button>
+  <button id="btnPrint" class="btn-gray" disabled>Print</button>
+  <button id="btnAndroidPrint" class="btn-blue" disabled>Print to Android</button>
+  <button id="btnClear" class="btn-warn">Clear</button>
 </div>
 
 <!-- Invoice preview -->
@@ -157,11 +132,10 @@ function openScanner() {
   setTimeout(() => { /* optional fallback */ }, 1500);
 }
 
-// Wire the button
-  document.getElementById('btnScan').addEventListener('click', (e) => {
-    e.preventDefault();
-    openScanner();
-  });
+document.getElementById('btnScan').addEventListener('click', (e) => {
+  e.preventDefault();
+  openScanner();
+});
 
 /* ===============
    Manual toggles
