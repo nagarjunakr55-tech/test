@@ -404,6 +404,7 @@ def create_app() -> Flask:
         name = get_last_customer_name(phone)
         return jsonify({"ok": True, "name": name or ""})
 
+    
     @app.post("/api/checkout")
     def api_checkout():
         data = request.get_json(silent=True) or {}
@@ -422,6 +423,23 @@ def create_app() -> Flask:
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
+        is_preview = bool(data.get("preview"))
+
+        # Preview path: DO NOT SAVE
+        if is_preview:
+            invoice_text = generate_invoice_text(
+                invoice_id="",   # no id on preview
+                customer_name=cust_name,
+                customer_phone=phone,
+                items=items,
+                subtotal=totals["subtotal"],
+                gst_amount=totals["gst"],
+                grand_total=totals["grand_total"],
+                discount_amt=totals["discount_amt"],
+            )
+            return jsonify({"ok": True, "invoice_text": invoice_text})
+
+        # Commit path (Android Print): SAVE to DB
         invoice_id = generate_unique_invoice_id()
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id,
@@ -431,7 +449,7 @@ def create_app() -> Flask:
             subtotal=totals["subtotal"],
             gst_amount=totals["gst"],
             grand_total=totals["grand_total"],
-            discount_amt=totals["discount_amt"]
+            discount_amt=totals["discount_amt"],
         )
 
         save_to_db(
@@ -447,6 +465,7 @@ def create_app() -> Flask:
         )
 
         return jsonify({"ok": True, "invoice_id": invoice_id, "invoice_text": invoice_text})
+
 
     return app
 

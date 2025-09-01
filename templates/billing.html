@@ -62,10 +62,9 @@
     padding: 2px 4px;
   }
   .sp-input::-webkit-outer-spin-button,
-  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .sp-input::-webkit-inner-spin_button { -webkit-appearance: none; margin: 0; }
   .sp-input[type=number] { -moz-appearance: textfield; }
 </style>
-
 
 <!-- Search modal -->
 <div id="searchModal" class="no-print" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;">
@@ -130,14 +129,12 @@ function buildCallback() {
   url.searchParams.delete('code');
   return url.toString();
 }
-
 function openScanner() {
   const cb = encodeURIComponent(buildCallback());
   const deeplink = `dripscan://scan?callback=${cb}`;
   window.location.href = deeplink;
   setTimeout(() => { /* optional fallback */ }, 1500);
 }
-
 document.getElementById('btnScan').addEventListener('click', (e) => {
   e.preventDefault();
   openScanner();
@@ -151,7 +148,6 @@ document.getElementById('btnToggleManual').addEventListener('click', (e)=>{
   const box = document.getElementById('manualBox');
   box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
 });
-
 const mSize = document.getElementById('mSize');
 const mCategory = document.getElementById('mCategory');
 function refreshSizes() {
@@ -167,19 +163,16 @@ refreshSizes();
    ========= */
 let cart = [];
 let subtotal = 0, finalTotal = 0;
-
 // Preview/save state
 let appliedDiscount = "";  // "NN%" or "NN"
 let lastPayload = null;    // built on Proceed (preview only)
 let lastInvoiceId = null;  // set only after SAVE (Android print)
 let lastInvoiceText = "";  // preview text
-
 // persistence
 const KEY_CART  = "drip_cart_v1";
 const KEY_DISC  = "drip_discount_v1";
 const KEY_NAME  = "drip_name_v1";
 const KEY_PHONE = "drip_phone_v1";
-
 function persistState() {
   try {
     localStorage.setItem(KEY_CART, JSON.stringify(cart));
@@ -188,7 +181,6 @@ function persistState() {
     localStorage.setItem(KEY_PHONE, (document.getElementById('custPhone').value || '').trim());
   } catch {}
 }
-
 function restoreState() {
   try {
     const savedCart = localStorage.getItem(KEY_CART);
@@ -199,7 +191,6 @@ function restoreState() {
     const savedDisc = localStorage.getItem(KEY_DISC) || "";
     appliedDiscount = savedDisc;
     if (savedDisc) document.getElementById('discount').value = savedDisc;
-
     const nm = localStorage.getItem(KEY_NAME);
     const ph = localStorage.getItem(KEY_PHONE);
     if (nm) document.getElementById('custName').value = nm;
@@ -247,7 +238,6 @@ function recalc() {
   subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
-
   let discountAmt = 0;
   if (appliedDiscount) {
     if (/%\s*$/.test(appliedDiscount)) {
@@ -257,13 +247,11 @@ function recalc() {
       const flat = parseFloat(appliedDiscount);
       if (!isNaN(flat) && flat >= 0) discountAmt = Math.min(flat, subtotal);
     }
-    // Enforce MAX rule for all discounts
     const finalCandidate = subtotal - discountAmt;
     if (finalCandidate < (boughtTotal + 100)) {
-      discountAmt = 0; // block if below threshold
+      discountAmt = 0;
     }
   }
-
   finalTotal = Math.max(0, subtotal - discountAmt);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
@@ -297,20 +285,16 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
-
 document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const btn = e.target; const act = btn.getAttribute('data-act'); const i = +btn.getAttribute('data-i');
   if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty)-1); if(cart[i].qty===0) cart.splice(i,1); renderCart(); }
   if (act === 'plus')  { cart[i].qty = Number(cart[i].qty)+1; renderCart(); }
   if (act === 'remove'){ cart.splice(i,1); renderCart(); }
 });
-
-// Inline SP Price edit
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('sp-input')) return;
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
-
   const v = parseFloat(e.target.value);
   if (isNaN(v) || v < 0) {
     e.target.value = Number(cart[i].price||0).toFixed(2);
@@ -332,24 +316,19 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     persistState();
     return;
   }
-
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
-
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
   if (finalCandidate < (boughtTotal + 100)) { alert('Maximum discount reached.'); return; }
-
   appliedDiscount = `${pct}%`;
   recalc();
   invalidateCheckout();
   persistState();
 });
-
-// Clear discount as soon as the field is emptied
 document.getElementById('discount').addEventListener('input', () => {
   const raw = (document.getElementById('discount').value || '').trim();
   if (!raw) {
@@ -377,7 +356,6 @@ async function addBarcode() {
     upsertCartItem(j.item);
   } catch { alert('Network error'); }
 }
-
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
 document.getElementById('btnBarcode').addEventListener('click', addBarcode);
 
@@ -394,7 +372,6 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price });
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
-
 document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
 document.getElementById('sClose').addEventListener('click', ()=> document.getElementById('searchModal').style.display='none');
 document.getElementById('sGo').addEventListener('click', async ()=>{
@@ -434,16 +411,12 @@ document.getElementById('custName').addEventListener('input', ()=>{ invalidateCh
 const proceedBtn = document.getElementById('btnProceed');
 proceedBtn.addEventListener('click', async ()=>{
   if (proceedBtn.disabled) return;
-
   const name = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
   const phone = (document.getElementById('custPhone').value || '').trim();
   if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
   if (!cart.length) { alert('Cart is empty'); return; }
-
   proceedBtn.disabled = true; const oldTxt = proceedBtn.textContent; proceedBtn.textContent = 'Preparing...';
-
   try {
-    // Build payload from LATEST inputs
     lastPayload = {
       customer_name: name,
       phone,
@@ -455,99 +428,65 @@ proceedBtn.addEventListener('click', async ()=>{
         price: Number(i.price||0)
       })),
       discount: appliedDiscount,
-      preview: true // IMPORTANT: tell backend to NOT save, only render
+      preview: true // do NOT save
     };
-
-    // PREVIEW ONLY (no DB write)
     const res = await fetch('{{ url_for("api_checkout") }}', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
     });
     const j = await res.json();
     if (!j.ok) { alert(j.error || 'Preview failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
-
-    lastInvoiceId = null;                       // nothing saved yet
+    lastInvoiceId = null;
     lastInvoiceText = j.invoice_text || '';
     document.getElementById('invoicePreview').textContent = lastInvoiceText;
-
-    setPrintEnabled(true);                      // browser print allowed
-    setAndroidPrintReady(true);                 // allow Android print (it will SAVE first)
+    setPrintEnabled(true);
+    setAndroidPrintReady(true);   // allowed; saving will happen there
     proceedBtn.textContent = 'Ready to Print';
-
   } catch {
     alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
   }
 });
-
 document.getElementById('btnPrint').addEventListener('click', (e)=>{
-  // Browser print of preview only (NO SAVE)
   if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
-  window.print();
+  window.print(); // preview only, no save
 });
-
-// SAVE ONLY on Android Print
 document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
   e.preventDefault();
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
-
-  // Create a copy WITHOUT the preview flag to force SAVE
-  const toSave = {...lastPayload};
-  delete toSave.preview;
-
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  const old = btn.textContent;
-  btn.textContent = 'Saving...';
-
+  const toSave = {...lastPayload}; delete toSave.preview; // commit
+  const btn = e.currentTarget; btn.disabled = true; const old = btn.textContent; btn.textContent = 'Saving...';
   try {
     const res = await fetch('{{ url_for("api_checkout") }}', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(toSave)
     });
     const j = await res.json();
-    if (!j.ok) { throw new Error(j.error || 'Save failed'); }
-
+    if (!j.ok) throw new Error(j.error || 'Save failed');
     lastInvoiceId = j.invoice_id;
     document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
-
-    // Wire and fire deep links with the REAL saved invoice id
     const base = window.location.origin;
     const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
     window.location.href = dl;
     setTimeout(() => {
-      const intent =
-        `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
-        `#Intent;scheme=drip;package=com.drip.tsplprint;end`;
+      const intent = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}#Intent;scheme=drip;package=com.drip.tsplprint;end`;
       window.location.href = intent;
     }, 800);
-
     btn.textContent = 'Printed';
   } catch (err) {
-    alert(err.message || 'Network error');
-    btn.textContent = old;
-    btn.disabled = false;
+    alert(err.message || 'Network error'); btn.textContent = old; btn.disabled = false;
   }
 });
-
 document.getElementById('btnClear').addEventListener('click', ()=>{
-  appliedDiscount = "";
-  document.getElementById('discount').value = '';
-  cart = [];
-  renderCart(); // recalc + persist inside
+  appliedDiscount = ""; document.getElementById('discount').value = '';
+  cart = []; renderCart();
   document.getElementById('invoicePreview').textContent = '';
-  lastInvoiceId = null;
-  lastPayload = null;
-  lastInvoiceText = "";
-  setPrintEnabled(false);
-  setAndroidPrintReady(false);
+  lastInvoiceId = null; lastPayload = null; lastInvoiceText = "";
+  setPrintEnabled(false); setAndroidPrintReady(false);
 });
 
 /* =========
    Init
    ========= */
 (function init(){
-  restoreState();
-  renderCart();
-
-  // Handle scanner return AFTER state/functions exist
+  restoreState(); renderCart();
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
   if (code) {

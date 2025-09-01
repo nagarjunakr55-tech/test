@@ -8,6 +8,28 @@ import string
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
 
+
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:
+    from pytz import timezone as ZoneInfo  # fallback
+
+def ist_now():
+    """Return current time in Asia/Kolkata."""
+    try:
+        tz = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from pytz import timezone
+        tz = timezone("Asia/Kolkata")
+    return datetime.now(tz)
+
+def india_date_str(dt=None):
+    """Format as DD-MM-YYYY hh:mm AM/PM (e.g., 01-09-2025 06:20 PM)."""
+    if dt is None:
+        dt = ist_now()
+    return dt.strftime("%d-%m-%Y %I:%M %p")
+
 # ---------------------------------
 # Bootstrap tables (Postgres)
 # ---------------------------------
@@ -17,21 +39,22 @@ def ensure_tables():
 
     # Sales history (receipts)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS sales_history (
-        id SERIAL PRIMARY KEY,
-        invoice_id TEXT UNIQUE,
-        customer_name TEXT,
-        phone TEXT,
-        items TEXT,
-        total NUMERIC,
-        discount NUMERIC,
-        gst NUMERIC,
-        grand_total NUMERIC,
-        gstin TEXT,
-        date TIMESTAMP,
-        invoice_text TEXT
-    )
-    """)
+CREATE TABLE IF NOT EXISTS sales_history (
+    id SERIAL PRIMARY KEY,
+    invoice_id TEXT UNIQUE,
+    customer_name TEXT,
+    phone TEXT,
+    items TEXT,
+    total NUMERIC,
+    discount NUMERIC,
+    gst NUMERIC,
+    grand_total NUMERIC,
+    gstin TEXT,
+    date TEXT,                
+    invoice_text TEXT
+)
+""")
+
 
     # Product catalog for barcode/search
     cur.execute("""
@@ -242,9 +265,9 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append("-" * COLS)
 
     # --- Left/Right info line (unchanged) ---
-    today = datetime.now().strftime("%Y-%m-%d")
+    today_str = india_date_str()  # <-- use helper
     left  = f"Invoice: {invoice_id}"
-    right = f"Date: {today}"
+    right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
 
     # --- Customer line (unchanged) ---
@@ -319,7 +342,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn = get_connection()
     cur = conn.cursor()
 
-    # Ensure table exists (safe if already created)
+    # Ensure table exists
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sales_history (
         id SERIAL PRIMARY KEY,
@@ -332,19 +355,22 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         gst NUMERIC,
         grand_total NUMERIC,
         gstin TEXT,
-        date TIMESTAMP,
+        date TEXT,
         invoice_text TEXT
     )
     """)
 
+    # India formatted date string
+    date_str = india_date_str()  # e.g., "01-09-2025 06:20 PM"
+
     cur.execute("""
         INSERT INTO sales_history
         (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (invoice_id) DO NOTHING
     """, (
         invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, invoice_text
+        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
     ))
 
     conn.commit()
