@@ -55,13 +55,12 @@
 
 <style>
   .sp-input{
-    width: 6ch;          /* ~4 digits + padding/spinners */
+    width: 6ch;
     max-width: 6ch;
     min-width: 6ch;
     text-align: right;
     padding: 2px 4px;
   }
-  /* optional: hide number spinners so width stays tight */
   .sp-input::-webkit-outer-spin-button,
   .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .sp-input[type=number] { -moz-appearance: textfield; }
@@ -168,17 +167,25 @@ refreshSizes();
    ========= */
 let cart = [];
 let subtotal = 0, finalTotal = 0;
-let lastInvoiceId = null;
+
+// Preview/save state
 let appliedDiscount = "";  // "NN%" or "NN"
+let lastPayload = null;    // built on Proceed (preview only)
+let lastInvoiceId = null;  // set only after SAVE (Android print)
+let lastInvoiceText = "";  // preview text
 
 // persistence
-const KEY_CART = "drip_cart_v1";
-const KEY_DISC = "drip_discount_v1";
+const KEY_CART  = "drip_cart_v1";
+const KEY_DISC  = "drip_discount_v1";
+const KEY_NAME  = "drip_name_v1";
+const KEY_PHONE = "drip_phone_v1";
 
 function persistState() {
   try {
     localStorage.setItem(KEY_CART, JSON.stringify(cart));
     localStorage.setItem(KEY_DISC, appliedDiscount || "");
+    localStorage.setItem(KEY_NAME, (document.getElementById('custName').value || 'Guest').trim() || 'Guest');
+    localStorage.setItem(KEY_PHONE, (document.getElementById('custPhone').value || '').trim());
   } catch {}
 }
 
@@ -192,6 +199,11 @@ function restoreState() {
     const savedDisc = localStorage.getItem(KEY_DISC) || "";
     appliedDiscount = savedDisc;
     if (savedDisc) document.getElementById('discount').value = savedDisc;
+
+    const nm = localStorage.getItem(KEY_NAME);
+    const ph = localStorage.getItem(KEY_PHONE);
+    if (nm) document.getElementById('custName').value = nm;
+    if (ph) document.getElementById('custPhone').value = ph;
   } catch {}
 }
 
@@ -213,9 +225,16 @@ function setPrintEnabled(on){
   btn.style.pointerEvents = on ? 'auto' : 'none';
   btn.style.opacity = on ? '1' : '.5';
 }
+function setAndroidPrintReady(on){
+  const btn = document.getElementById('btnAndroidPrint');
+  btn.disabled = !on;
+}
 function invalidateCheckout() {
   lastInvoiceId = null;
+  lastPayload   = null;
+  lastInvoiceText = "";
   setPrintEnabled(false);
+  setAndroidPrintReady(false);
   const btn = document.getElementById('btnProceed');
   btn.disabled = false;
   btn.textContent = 'Proceed';
@@ -404,7 +423,10 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
     const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
     const j = await r.json(); if (j.ok && j.name) document.getElementById('custName').value = j.name;
   }
+  invalidateCheckout();
+  persistState();
 });
+document.getElementById('custName').addEventListener('input', ()=>{ invalidateCheckout(); persistState(); });
 
 /* ==========================
    Proceed / Print / Clear
@@ -412,14 +434,17 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
 const proceedBtn = document.getElementById('btnProceed');
 proceedBtn.addEventListener('click', async ()=>{
   if (proceedBtn.disabled) return;
+
   const name = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
   const phone = (document.getElementById('custPhone').value || '').trim();
   if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
   if (!cart.length) { alert('Cart is empty'); return; }
 
-  proceedBtn.disabled = true; const oldTxt = proceedBtn.textContent; proceedBtn.textContent = 'Processing...';
+  proceedBtn.disabled = true; const oldTxt = proceedBtn.textContent; proceedBtn.textContent = 'Preparing...';
+
   try {
-    const payload = {
+    // Build payload from LATEST inputs
+    lastPayload = {
       customer_name: name,
       phone,
       items: cart.map(i => ({
@@ -429,25 +454,77 @@ proceedBtn.addEventListener('click', async ()=>{
         bought_price: Number(i.bought_price||0),
         price: Number(i.price||0)
       })),
-      discount: appliedDiscount
+      discount: appliedDiscount,
+      preview: true // IMPORTANT: tell backend to NOT save, only render
     };
-    const res = await fetch('{{ url_for("api_checkout") }}', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const j = await res.json();
-    if (!j.ok) { alert(j.error || 'Checkout failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
 
-    lastInvoiceId = j.invoice_id;
-    wireAndroidPrint(lastInvoiceId);     
-    document.getElementById('invoicePreview').textContent = j.invoice_text;
-    setPrintEnabled(true);
-    proceedBtn.textContent = 'Proceeded';
-  
+    // PREVIEW ONLY (no DB write)
+    const res = await fetch('{{ url_for("api_checkout") }}', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
+    });
+    const j = await res.json();
+    if (!j.ok) { alert(j.error || 'Preview failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
+
+    lastInvoiceId = null;                       // nothing saved yet
+    lastInvoiceText = j.invoice_text || '';
+    document.getElementById('invoicePreview').textContent = lastInvoiceText;
+
+    setPrintEnabled(true);                      // browser print allowed
+    setAndroidPrintReady(true);                 // allow Android print (it will SAVE first)
+    proceedBtn.textContent = 'Ready to Print';
+
   } catch {
     alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
   }
 });
 
 document.getElementById('btnPrint').addEventListener('click', (e)=>{
-  if (!lastInvoiceId) { e.preventDefault(); alert('Please click Proceed first.'); }
+  // Browser print of preview only (NO SAVE)
+  if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
+  window.print();
+});
+
+// SAVE ONLY on Android Print
+document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  if (!lastPayload) { alert('Please click Proceed first.'); return; }
+
+  // Create a copy WITHOUT the preview flag to force SAVE
+  const toSave = {...lastPayload};
+  delete toSave.preview;
+
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'Saving...';
+
+  try {
+    const res = await fetch('{{ url_for("api_checkout") }}', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(toSave)
+    });
+    const j = await res.json();
+    if (!j.ok) { throw new Error(j.error || 'Save failed'); }
+
+    lastInvoiceId = j.invoice_id;
+    document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
+
+    // Wire and fire deep links with the REAL saved invoice id
+    const base = window.location.origin;
+    const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
+    window.location.href = dl;
+    setTimeout(() => {
+      const intent =
+        `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
+        `#Intent;scheme=drip;package=com.drip.tsplprint;end`;
+      window.location.href = intent;
+    }, 800);
+
+    btn.textContent = 'Printed';
+  } catch (err) {
+    alert(err.message || 'Network error');
+    btn.textContent = old;
+    btn.disabled = false;
+  }
 });
 
 document.getElementById('btnClear').addEventListener('click', ()=>{
@@ -457,27 +534,11 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   renderCart(); // recalc + persist inside
   document.getElementById('invoicePreview').textContent = '';
   lastInvoiceId = null;
+  lastPayload = null;
+  lastInvoiceText = "";
   setPrintEnabled(false);
+  setAndroidPrintReady(false);
 });
-
-function wireAndroidPrint(invoiceId) {
-  const btn = document.getElementById('btnAndroidPrint');
-  if (!btn) return;
-  btn.disabled = !invoiceId;
-  if (!invoiceId) return;
-
-  btn.onclick = () => {
-    const base = window.location.origin;
-    const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}`;
-    window.location.href = dl;
-    setTimeout(() => {
-      const intent =
-        `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
-        `#Intent;scheme=drip;package=com.drip.tsplprint;end`;
-      window.location.href = intent;
-    }, 800);
-  };
-}
 
 /* =========
    Init
