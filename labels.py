@@ -11,6 +11,7 @@ from flask import (
 from urllib.parse import quote as urlquote
 
 from db import get_connection  # your existing DB helper
+from flask import session, redirect, url_for, flash  # add these
 
 labels_bp = Blueprint("labels", __name__, url_prefix="/labels")
 labels_bp.strict_slashes = False  # avoid trailing-slash 404s
@@ -134,6 +135,32 @@ PRINT {max(1, int(copies))},1
     return tspl
 
 
+@labels_bp.post("/barcodes/<code>/delete", endpoint="barcodes_delete")
+def barcodes_delete(code: str):
+    """Hard delete a barcode row by its code (admin-only)."""
+    if not session.get("is_admin"):
+        # mirror your invoices behavior; choose what you prefer (403 or redirect with message)
+        flash("Admin only.", "error")
+        return redirect(url_for("labels.page"))
+
+    # Normalize the code format the same way you store it
+    code = (code or "").strip().upper()
+    if not code:
+        flash("Invalid code.", "error")
+        return redirect(url_for("labels.page"))
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM public.barcode_catalog WHERE barcode_data=%s", (code,))
+            conn.commit()
+        flash(f"Deleted barcode {code}.", "success")
+    except Exception as e:
+        current_app.logger.exception("barcodes_delete failed")
+        flash(f"Delete failed: {e}", "error")
+
+    return redirect(url_for("labels.page"))
+
 def print_tspl_windows(tspl_text: str, printer_name: str) -> None:
     """Send raw TSPL once (it already contains PRINT {copies},1)."""
     if platform.system() != "Windows" or not WIN32_AVAILABLE:
@@ -174,6 +201,8 @@ def labels_page():
                 LIMIT 100
             """)
             rows = cur.fetchall()
+
+    is_admin = bool(session.get("is_admin"))        
 
     return render_template(
         "labels_form.html",

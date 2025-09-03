@@ -132,14 +132,24 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
         <td>{{ r[5] }}</td>
         <td><code>{{ r[6] }}</code></td>
         <td>
-          <button class="btn" type="button"
-                  onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
-            Re-use
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
+      <button class="btn" type="button"
+              onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
+        Re-use
+      </button>
+    </td>
+    {% if is_admin %}
+    <td>
+      <form method="post"
+            action="{{ url_for('labels.barcodes_delete', code=r[6]) }}"
+            onsubmit="return confirm('Delete barcode {{ r[6] }}?');"
+            style="display:inline;">
+        <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</tbody>
   </table>
 {% endif %}
 
