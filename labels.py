@@ -12,6 +12,15 @@ from urllib.parse import quote as urlquote
 
 from db import get_connection  # your existing DB helper
 from flask import session, redirect, url_for, flash  # add these
+from datetime import datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo   # builtin in Python 3.9+
+
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+
 
 labels_bp = Blueprint("labels", __name__, url_prefix="/labels")
 labels_bp.strict_slashes = False  # avoid trailing-slash 404s
@@ -22,6 +31,9 @@ try:
     WIN32_AVAILABLE = True
 except Exception:
     WIN32_AVAILABLE = False
+
+def now_ist():
+    return datetime.now(IST)
 
 
 # --- Helpers ------------------------------------------------------------------
@@ -91,14 +103,16 @@ def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
 def insert_code(brand, size, category, mrp, bought, sp, code: str) -> None:
     sql = """
     INSERT INTO barcode_catalog
-      (brand, mrp, bought_price, selling_price, size, category, barcode_data, status)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, 'available')
+      (brand, mrp, bought_price, selling_price, size, category, barcode_data, status, created_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, 'available', %s)
     ON CONFLICT (barcode_data) DO NOTHING
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (brand, mrp, bought, sp, size, category, code))
+            cur.execute(sql, (brand, mrp, bought, sp, size, category, code, now_ist()))
         conn.commit()
+    e(sql, (brand, mrp, bought, sp, size, category, code))
+    conn.commit()
 
 
 def tspl_for_item(code: str, brand: str, size: str,
@@ -195,11 +209,11 @@ def labels_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT brand, mrp, bought_price, selling_price, size, category, barcode_data, created_at
-                FROM barcode_catalog
-                ORDER BY created_at DESC NULLS LAST, id DESC
-                LIMIT 100
-            """)
+            SELECT brand, mrp, bought_price, selling_price, size, category, barcode_data, created_at
+            FROM barcode_catalog
+            ORDER BY created_at DESC NULLS LAST, id DESC
+            LIMIT 500
+        """)
             rows = cur.fetchall()
 
     is_admin = bool(session.get("is_admin"))        
