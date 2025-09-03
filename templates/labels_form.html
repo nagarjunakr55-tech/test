@@ -118,8 +118,8 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
   <table class="barcode-list">
     <thead>
   <tr>
-    <th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th>
-    <th>Size</th><th>Category</th><th>Code</th><th>Date</th><th>Action</th>
+    <th>Action</th><th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th>
+    <th>Size</th><th>Category</th><th>Code</th><th>Date</th>
     {% if is_admin %}<th>Delete</th>{% endif %}
   </tr>
 </thead>
@@ -127,6 +127,12 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
     <tbody>
   {% for r in recent_rows %}
   <tr>
+    <td>
+      <button class="btn" type="button"
+              onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
+        Re-use
+      </button>
+    </td>
     <td>{{ r[0] }}</td>
     <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
     <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
@@ -139,12 +145,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
         {{ r[7].strftime("%d-%m-%Y") }}
       {% endif %}
     </td>
-    <td>
-      <button class="btn" type="button"
-              onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
-        Re-use
-      </button>
-    </td>
+    
     {% if is_admin %}
     <td>
       <form method="post"
