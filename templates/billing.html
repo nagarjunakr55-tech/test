@@ -475,12 +475,33 @@ document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>
   }
 });
 document.getElementById('btnClear').addEventListener('click', ()=>{
-  appliedDiscount = ""; document.getElementById('discount').value = '';
-  cart = []; renderCart();
+  // reset discount UI/state
+  appliedDiscount = "";
+  document.getElementById('discount').value = '';
+
+  // reset Name & Phone
+  const nameEl  = document.getElementById('custName');
+  const phoneEl = document.getElementById('custPhone');
+  nameEl.value  = 'Guest';
+  phoneEl.value = '';
+
+  // clear persisted values
+  try {
+    localStorage.removeItem(KEY_NAME);
+    localStorage.removeItem(KEY_PHONE);
+  } catch {}
+
+  // clear cart and re-render
+  cart = [];
+  renderCart();
+
+  // clear preview + flags
   document.getElementById('invoicePreview').textContent = '';
   lastInvoiceId = null; lastPayload = null; lastInvoiceText = "";
-  setPrintEnabled(false); setAndroidPrintReady(false);
+  setPrintEnabled(false);
+  setAndroidPrintReady(false);
 });
+
 
 /* =========
    Init
