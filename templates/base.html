@@ -132,6 +132,14 @@ button:hover, .btn:hover{ filter: brightness(.95); }
       @page{ size:76.2mm auto; margin:0; }
     }
   </style>
+  <!-- Favicon + app icons -->
+<link rel="icon" type="image/x-icon"
+      href="{{ url_for('static', filename='favicon.ico') }}?v=2">
+<link rel="icon" type="image/png" sizes="32x32"
+      href="{{ url_for('static', filename='favicon-32.png') }}?v=2">
+<link rel="apple-touch-icon" sizes="180x180"
+      href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=2">
+
 </head>
 <body class="{{ body_class|default('') }}">
   <header>
@@ -141,6 +149,8 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <a href="{{ url_for('history') }}">History</a>
   <a href="{{ url_for('home') }}">Home</a>
   <a href="{{ url_for('labels.page') }}">Barcodes</a>
+  <a href="{{ url_for('inventory.inventory_page') }}">Inventory</a>
+
 
   {% if session.get('user') %}
   <a href="{{ url_for('auth.logout') }}" class="logout">

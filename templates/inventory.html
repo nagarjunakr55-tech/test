@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Inventory</h2>
+
+{% if not using_events %}
+  <div style="margin:8px 0; color:#92400e; background:#fffbeb; padding:10px 12px; border:1px solid #f59e0b33; border-radius:8px;">
+    <strong>Heads up:</strong> Printed quantity uses a fallback (assumes <em>1 label per barcode</em>).
+    To include copies and re-prints accurately, enable print logging
+    (i.e., write to <code>public.barcode_print_events</code> when printing).
+  </div>
+{% endif %}
+
+<div class="table-responsive" style="margin-top:12px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Brand</th>
+        <th>Size</th>
+        <th>Category</th>
+        <th>Printed</th>
+        <th>Sold</th>
+        <th>Available</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r[0] }}</td>
+          <td>{{ r[1] }}</td>
+          <td>{{ r[2] }}</td>
+          <td>{{ r[3] }}</td>
+          <td>{{ r[4] }}</td>
+          <td>{{ r[5] }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if rows|length == 0 %}
+  <p>No data yet.</p>
+{% endif %}
+{% endblock %}

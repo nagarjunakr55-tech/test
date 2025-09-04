@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from flask import (
-    Flask, render_template, request, redirect, url_for, jsonify, abort, session,Response
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response
 )
 
 from logic.billing_logic import (
@@ -21,7 +21,9 @@ from logic.billing_logic import (
 
 from db import get_connection
 from labels import labels_bp
-
+from inventory import inventory_bp
+from flask import send_from_directory
+# from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
 
 def create_app() -> Flask:
     # Logging (stdout)
@@ -29,7 +31,17 @@ def create_app() -> Flask:
     log = logging.getLogger("drip")
 
     app = Flask(__name__)
+    # register_invoice_routes(app)  # <-- REMOVE/COMMENT OUT to avoid duplicate endpoints
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+
+
+    @app.route('/favicon.ico')
+    def favicon():
+        return send_from_directory(
+            os.path.join(app.root_path, 'static'),
+            'favicon.ico',
+            mimetype='image/vnd.microsoft.icon'
+        )
 
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
@@ -70,6 +82,7 @@ def create_app() -> Flask:
         # makes `is_admin` available in Jinja templates
         return {"is_admin": is_admin()}
 
+    # Restore original endpoint names so templates keep working
     @app.post("/admin/login")
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
@@ -83,7 +96,7 @@ def create_app() -> Flask:
     @app.post("/admin/logout")
     def admin_logout():
         session.clear()
-        return redirect(url_for("history")) 
+        return redirect(url_for("history"))
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
@@ -138,6 +151,7 @@ def create_app() -> Flask:
 
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
+    app.register_blueprint(inventory_bp)
 
     # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")
@@ -163,7 +177,6 @@ def create_app() -> Flask:
             return redirect(url_for("history"))
         finally:
             conn.close()
-
 
     @app.get("/__endpoint/<path:endpoint>")
     def __endpoint_locator(endpoint):
@@ -370,7 +383,6 @@ def create_app() -> Flask:
         }
         return jsonify({"ok": True, "item": item})
 
-
     @app.get("/health")
     def health():
         return {"ok": True}, 200
@@ -404,7 +416,6 @@ def create_app() -> Flask:
         name = get_last_customer_name(phone)
         return jsonify({"ok": True, "name": name or ""})
 
-    
     @app.post("/api/checkout")
     def api_checkout():
         data = request.get_json(silent=True) or {}
@@ -465,7 +476,6 @@ def create_app() -> Flask:
         )
 
         return jsonify({"ok": True, "invoice_id": invoice_id, "invoice_text": invoice_text})
-
 
     return app
 

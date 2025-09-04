@@ -8,8 +8,7 @@ import string
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
 
-
-from datetime import datetime
+# --- IST helpers --------------------------------------------------------------
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
@@ -39,37 +38,55 @@ def ensure_tables():
 
     # Sales history (receipts)
     cur.execute("""
-CREATE TABLE IF NOT EXISTS sales_history (
-    id SERIAL PRIMARY KEY,
-    invoice_id TEXT UNIQUE,
-    customer_name TEXT,
-    phone TEXT,
-    items TEXT,
-    total NUMERIC,
-    discount NUMERIC,
-    gst NUMERIC,
-    grand_total NUMERIC,
-    gstin TEXT,
-    date TEXT,                
-    invoice_text TEXT
-)
-""")
-
+        CREATE TABLE IF NOT EXISTS sales_history (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT UNIQUE,
+            customer_name TEXT,
+            phone TEXT,
+            items TEXT,
+            total NUMERIC,
+            discount NUMERIC,
+            gst NUMERIC,
+            grand_total NUMERIC,
+            gstin TEXT,
+            date TEXT,
+            invoice_text TEXT
+        )
+    """)
 
     # Product catalog for barcode/search
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS barcode_catalog (
-        id SERIAL PRIMARY KEY,
-        brand TEXT,
-        mrp NUMERIC,
-        bought_price NUMERIC,
-        selling_price NUMERIC,
-        size TEXT,
-        category TEXT,
-        barcode_data TEXT UNIQUE,
-        status TEXT
-    )
+        CREATE TABLE IF NOT EXISTS barcode_catalog (
+            id SERIAL PRIMARY KEY,
+            brand TEXT,
+            mrp NUMERIC,
+            bought_price NUMERIC,
+            selling_price NUMERIC,
+            size TEXT,
+            category TEXT,
+            barcode_data TEXT UNIQUE,
+            status TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
     """)
+
+    # Printed counter (ok if it already exists)
+    try:
+        cur.execute("ALTER TABLE barcode_catalog ADD COLUMN IF NOT EXISTS printed_qty INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
+    # NEW: per-barcode sold quantities
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_barcodes (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT,
+            code TEXT,
+            qty INTEGER DEFAULT 1
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_barcodes_code ON sales_barcodes(code)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_barcodes_invoice ON sales_barcodes(invoice_id)")
 
     conn.commit()
     cur.close()
@@ -93,13 +110,17 @@ def find_product_by_barcode(code: str):
 
     if not row:
         return None
+    # Keys aligned to your frontend cart usage
     return {
+        "code": code,
         "brand": row[0],
-        "mrp": row[1],
+        "mrp_price": row[1],
         "bought_price": row[2],
         "selling_price": row[3],
         "size": row[4],
         "category": row[5],
+        "price": row[3],   # default selling price
+        "qty": 1
     }
 
 def search_products(brand: str = "", category: str = "", size: str = "", limit: int = 20):
@@ -127,13 +148,15 @@ def search_products(brand: str = "", category: str = "", size: str = "", limit: 
     rows = cur.fetchall()
     conn.close()
 
+    # Return keys expected by your search modal: mrp_price & price
     out = []
     for r in rows:
         out.append({
             "brand": r[0],
-            "mrp": r[1],
+            "mrp_price": r[1],
             "bought_price": r[2],
             "selling_price": r[3],
+            "price": r[3],
             "size": r[4],
             "category": r[5],
         })
@@ -170,9 +193,8 @@ def generate_unique_invoice_id() -> str:
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
-_ALLOWED_PCTS = {5, 10, 15, 20, 25,30}
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30}
 
-# logic/billing_logic.py
 def calculate_totals(items, discount_input: str):
     """
     items: [{price, qty, bought_price, ...}]
@@ -189,18 +211,15 @@ def calculate_totals(items, discount_input: str):
     discount_amt = 0.0
 
     if di:
-        is_percent = di.endswith("%") or di.replace(".", "", 1).isdigit()
         try:
             if di.endswith("%"):
                 pct = float(di[:-1])
                 discount_amt = subtotal * (pct / 100.0)
             elif di.replace(".", "", 1).isdigit():
-                # plain number -> treat as percent
-                pct = float(di)
+                pct = float(di)  # plain number -> percent
                 discount_amt = subtotal * (pct / 100.0)
             else:
-                # flat amount (rare here, but supported)
-                flat = float(di)
+                flat = float(di)  # treat as flat
                 discount_amt = min(flat, subtotal)
         except Exception:
             raise ValueError("invalid_discount")
@@ -220,20 +239,12 @@ def calculate_totals(items, discount_input: str):
         "gst": round(gst, 2),
     }
 
-
-
 # ---------------------------------
 # Invoice text (monospace)
 # ---------------------------------
-
-from datetime import datetime
-
-BRAND_NAME = "DRIP"
-
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
     # Narrower total width so 3" printers don't clip the right edge
-    COLS = 35  # safe on most 3" (was 42)
-    # Field widths: 2 +1 +12 +1 +2 +1 +2 +1 +6 +1 +6 = 35
+    COLS = 35  # safe on most 3"
     W_NO   = 2
     W_BR   = 12
     W_SZ   = 2
@@ -244,39 +255,31 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     def clamp(s, n): return (str(s)[:n]).ljust(n)
 
     lines = []
-    today = datetime.now().strftime("%Y-%m-%d")
 
-    # --- Header (shop name + address, centered) ---
+    # Header (centered)
     header = [
         "DRIP",
-       
         "#6-2-52,",
         "D L Road, Hindupur,",
         "Satya Sai (D), AP-515201",
         "Phone: 8106204688"
-      
     ]
-    
     for s in header:
         lines.append(s.center(COLS))
-
-    
-
     lines.append("-" * COLS)
 
-    # --- Left/Right info line (unchanged) ---
-    today_str = india_date_str()  # <-- use helper
+    # Left/Right info line
+    today_str = india_date_str()
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
 
-    # --- Customer line (unchanged) ---
+    # Customer line
     cust_line = f"Customer: {customer_name} / {customer_phone}"
     lines.append(clamp(cust_line, COLS))
     lines.append("-" * COLS)
 
-
-    # Header (kept explicit so "Price" doesn't get cut)
+    # Column header
     header = (
         f"{'No':>{W_NO}} "
         f"{'Brand':<{W_BR}} "
@@ -294,7 +297,6 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         qty   = int(item.get("qty", 1))
         mrp   = int(float(item.get("mrp_price", 0)))
         price = int(float(item.get("price", 0)))
-
         row = (
             f"{idx:>{W_NO}} "
             f"{brand} "
@@ -306,34 +308,25 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         lines.append(row)
 
     lines.append("-" * COLS)
-    # No "Subtotal" (as requested)
-    # --- after: lines.append("-" * COLS) and before printing Discount/Total ---
-    LBL_W = 18  # left label width used below
+    LBL_W = 18
 
-    # compute effective % from amount (works because you only use % discounts)
+    # Effective discount % (derived)
     disc_pct_text = ""
     if subtotal and float(discount_amt) > 0:
         eff = (float(discount_amt) / float(subtotal)) * 100.0
-        # show as integer if it’s clean (e.g., 10,15,20,25), else 1 decimal
         disc_pct_text = f" ({int(round(eff))}%)" if abs(eff - round(eff)) < 0.01 else f" ({eff:.1f}%)"
 
     if discount_amt and float(discount_amt) > 0:
         label = f"Discount{disc_pct_text}"
         lines.append(f"{clamp(label, LBL_W)}{('-' + format(discount_amt, '.2f')).rjust(COLS - LBL_W)}")
 
-
     total_label = "Total"
     lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
-
     lines.append("-" * COLS)
-
     lines.append("Thank you for shopping with DRIP!".center(COLS))
     lines.append(" " * COLS)
 
     return "\n".join(lines)
-
-
-
 
 # ---------------------------------
 # Persistence
@@ -342,27 +335,35 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn = get_connection()
     cur = conn.cursor()
 
-    # Ensure table exists
+    # ensure tables (safe to call)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS sales_history (
-        id SERIAL PRIMARY KEY,
-        invoice_id TEXT UNIQUE,
-        customer_name TEXT,
-        phone TEXT,
-        items TEXT,
-        total NUMERIC,
-        discount NUMERIC,
-        gst NUMERIC,
-        grand_total NUMERIC,
-        gstin TEXT,
-        date TEXT,
-        invoice_text TEXT
-    )
+        CREATE TABLE IF NOT EXISTS sales_history (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT UNIQUE,
+            customer_name TEXT,
+            phone TEXT,
+            items TEXT,
+            total NUMERIC,
+            discount NUMERIC,
+            gst NUMERIC,
+            grand_total NUMERIC,
+            gstin TEXT,
+            date TEXT,
+            invoice_text TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_barcodes (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT,
+            code TEXT,
+            qty INTEGER DEFAULT 1
+        )
     """)
 
-    # India formatted date string
-    date_str = india_date_str()  # e.g., "01-09-2025 06:20 PM"
+    date_str = india_date_str()
 
+    # invoice header/body
     cur.execute("""
         INSERT INTO sales_history
         (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
@@ -372,6 +373,16 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         invoice_id, name, phone, json.dumps(items), subtotal,
         discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
     ))
+
+    # record barcode sales (skip manual items without a code)
+    for it in items:
+        code = (it.get("code") or "").strip()
+        qty  = int(it.get("qty") or 0)
+        if code and qty > 0:
+            cur.execute(
+                "INSERT INTO sales_barcodes (invoice_id, code, qty) VALUES (%s, %s, %s)",
+                (invoice_id, code, qty)
+            )
 
     conn.commit()
     cur.close()
