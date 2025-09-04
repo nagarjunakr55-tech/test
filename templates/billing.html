@@ -27,14 +27,12 @@
   <button id="btnBarcode"
         style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
   Add
-</button>
-
+  </button>
 
   <button id="btnScan" type="button"
         style="background:#9c27b0;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
   Scan
-</button>
-
+  </button>
 </div>
 
 <!-- MANUAL add area (hidden by default) -->
@@ -70,7 +68,7 @@
     padding: 2px 4px;
   }
   .sp-input::-webkit-outer-spin-button,
-  .sp-input::-webkit-inner-spin_button { -webkit-appearance: none; margin: 0; }
+  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .sp-input[type=number] { -moz-appearance: textfield; }
 </style>
 
@@ -115,37 +113,27 @@
   <input id="discount" class="input-sm"  autocomplete="off" inputmode="decimal">
   <button id="applyDiscount"
         style="background:#2196f3;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
-  Discount
-</button>
-
-
-
+    Discount
+  </button>
 
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
   <button id="btnProceed"
         style="background:#4caf50;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
-  Proceed
-</button>
+    Proceed
+  </button>
 
- <button id="btnAndroidPrint"
+  <button id="btnAndroidPrint"
         style="background:#795548;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;opacity:0.6;cursor:not-allowed;"
         disabled>
-  Print
-</button>
-
-
-
-
-
+    Print
+  </button>
 
   <button id="btnClear"
         style="background:#e53935;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
-  Clear
-</button>
-
-
+    Clear
+  </button>
 </div>
 
 <!-- Invoice preview -->
@@ -244,7 +232,9 @@ function upsertCartItem(newItem){
   renderCart();
 }
 function setPrintEnabled(on){
+  // If there's no btnPrint in DOM, safely no-op.
   const btn = document.getElementById('btnPrint');
+  if (!btn) return;
   btn.style.pointerEvents = on ? 'auto' : 'none';
   btn.style.opacity = on ? '1' : '.5';
 }
@@ -477,10 +467,16 @@ proceedBtn.addEventListener('click', async ()=>{
     alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
   }
 });
-document.getElementById('btnPrint').addEventListener('click', (e)=>{
-  if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
-  window.print(); // preview only, no save
-});
+
+// Guard the (optional) btnPrint handler
+const btnPrintEl = document.getElementById('btnPrint');
+if (btnPrintEl) {
+  btnPrintEl.addEventListener('click', (e)=>{
+    if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
+    window.print(); // preview only, no save
+  });
+}
+
 document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
   e.preventDefault();
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
@@ -533,7 +529,6 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   setPrintEnabled(false);
   setAndroidPrintReady(false);
 });
-
 
 /* =========
    Init
