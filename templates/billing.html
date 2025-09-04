@@ -152,7 +152,7 @@ const mSize = document.getElementById('mSize');
 const mCategory = document.getElementById('mCategory');
 function refreshSizes() {
   const c = mCategory.value;
-  const sizes = (c === 'Shirt' || c === 'T-Shirt') ? ['S','M','L','XL'] : ['28','30','32','34','36','38'];
+  const sizes = (c === 'Shirt' || c === 'T-Shirt') ? ['S','M','L','XL','XXL','3XL','4XL'] : ['28','30','32','34','36','38','40','42','44'];
   mSize.innerHTML = sizes.map(s=>`<option>${s}</option>`).join('');
 }
 mCategory.addEventListener('change', refreshSizes);
