@@ -325,7 +325,7 @@ def generate_invoice_text(
         mrp   = int(float(item.get("mrp_price", 0)))
         price = int(float(item.get("price", 0)))
         row = (
-            f"{idx:>{W_NO}} "
+            f"{idx:<{W_NO}} "
             f"{brand:<{W_BR}} "
             f"{size:<{W_SZ}} "
             f"{qty:<{W_Q}} "
