@@ -244,7 +244,7 @@ def calculate_totals(items, discount_input: str):
 # ---------------------------------
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
     # Tighter width to stop right-edge clipping on 3" printers
-    COLS = 39
+    COLS = 37
 
     # Width plan with single spaces between columns:
     # 2 +1 +11 +1 +3 +1 +2 +1 +7 +1 +6 = 36  (<= COLS)

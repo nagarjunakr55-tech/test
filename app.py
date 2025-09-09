@@ -51,15 +51,22 @@ def create_app() -> Flask:
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
 
-        # Strip time from the "Date:" part, keep only DD-MM-YYYY
-        # Works whether Date is on its own line or shares the line with "Invoice:"
-        def strip_time(line: str) -> str:
-            # Match "...Date: 01-09-2025 06:20 PM" -> keep "...Date: 01-09-2025"
-            return re.sub(r"(Date:\s*\d{2}-\d{2}-\d{4}).*$", r"\1", line)
+        # --- Strip time from the "Date:" portion ONLY for printing ---
+        # Matches: Date: 01-09-2025 06:20 PM  -> keep "Date: 01-09-2025"
+        def _strip_time_on_date_line(line: str) -> str:
+            # Look for "Date: DD-MM-YYYY ..." and cut after the date
+            m = re.search(r"(Date:\s*\d{2}-\d{2}-\d{4})", line)
+            if m:
+                return m.group(1)
+            return line
 
-        lines = [strip_time(l) for l in invoice.splitlines()]
+        lines = []
+        for ln in invoice.splitlines():
+            if "Date:" in ln:
+                ln = _strip_time_on_date_line(ln)
+            lines.append(ln)
 
-        # TSPL render
+        # --- TSPL layout (unchanged) ---
         y = 20
         dy = 28
         tspl = [
@@ -71,7 +78,7 @@ def create_app() -> Flask:
         ]
         for line in lines[:250]:  # safety bound
             safe = line.replace('"', "'")
-            tspl.append(f'TEXT 10,{y},"0",0,1,1,"{safe}"')  # left margin 10 (was 20)
+            tspl.append(f'TEXT 20,{y},"0",0,1,1,"{safe}"')
             y += dy
         tspl.append(f"PRINT {copies},1")
 
