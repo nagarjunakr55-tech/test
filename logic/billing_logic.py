@@ -243,23 +243,22 @@ def calculate_totals(items, discount_input: str):
 # Invoice text (monospace)
 # ---------------------------------
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
-    # Wider line width for 3" printers to better use the paper
-    COLS = 42  # was 35
+    # Slightly narrower to avoid right-edge clipping on 3" printers
+    COLS = 39
 
-    # Rebalance column widths to match COLS=42
-    # 2 +1 +16 +1 +3 +1 +6 +1 +8 +1 +2 = 42
+    # 2 +1 +14 +1 +3 +1 +2 +1 +7 +1 +6 = 39
     W_NO   = 2
-    W_BR   = 16
+    W_BR   = 14
     W_SZ   = 3
     W_Q    = 2
-    W_MRP  = 8
-    W_PRC  = 8
+    W_MRP  = 7
+    W_PRC  = 6
 
     def clamp(s, n): return (str(s)[:n]).ljust(n)
 
     lines = []
 
-    # --- Header (shop name + address, centered) ---
+    # Header
     header = [
         "DRIP",
         "#6-2-52,",
@@ -272,8 +271,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
 
     lines.append("-" * COLS)
 
-    # Date/Invoice line (left/right on same row)
-    from .billing_logic import india_date_str  # if this import is not top-level already
+    # Date/Invoice line (left/right same row)
     today_str = india_date_str()
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
@@ -316,10 +314,9 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
 
     lines.append("-" * COLS)
 
-    # Footer totals (wider label area to push numbers to the far right)
-    LBL_W = 24  # was 18
+    # Totals
+    LBL_W = 22  # label width to push numbers right within 39 cols
 
-    # Show Discount with inferred % (if any)
     disc_pct_text = ""
     if subtotal and float(discount_amt) > 0:
         eff = (float(discount_amt) / float(subtotal)) * 100.0
@@ -337,6 +334,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append(" " * COLS)
 
     return "\n".join(lines)
+
 
 
 # ---------------------------------
