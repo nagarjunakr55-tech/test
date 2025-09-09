@@ -341,17 +341,13 @@ def create_app() -> Flask:
         if not code:
             return jsonify({"ok": False, "error": "empty_barcode"}), 400
 
-        # Helper: coerce to int or None (your prices are INTEGER in DB)
         def to_int_or_none(x):
-            if x is None:
-                return None
+            if x is None: return None
             try:
-                # handle strings like "123" or "123.0"
                 return int(float(str(x).strip()))
             except Exception:
                 return None
 
-        # Fetch the product
         row = None
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -371,17 +367,18 @@ def create_app() -> Flask:
 
         brand, category, size, mrp, bought, sp = row
 
-        # Build cart item for your frontend
         item = {
-            "brand":        brand or "",
-            "category":     category or "",
-            "size":         size or "",
-            "qty":          1,
-            "mrp_price":    to_int_or_none(mrp),          # may be None
-            "bought_price": to_int_or_none(bought),       # may be None
-            "price":        to_int_or_none(sp) or 0       # ensure a usable price
+            "code":        code,                       # <-- NEW: include barcode
+            "brand":       brand or "",
+            "category":    category or "",
+            "size":        size or "",
+            "qty":         1,
+            "mrp_price":   to_int_or_none(mrp),
+            "bought_price":to_int_or_none(bought),
+            "price":       to_int_or_none(sp) or 0
         }
         return jsonify({"ok": True, "item": item})
+
 
     @app.get("/health")
     def health():

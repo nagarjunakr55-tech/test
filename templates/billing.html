@@ -223,12 +223,18 @@ function restoreState() {
    ========= */
 function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 function sameKey(a,b){
+  // If either has a barcode, require same code. Different codes must not merge.
+  if ((a.code || b.code) && a.code !== b.code) return false;
   return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
 }
 function upsertCartItem(newItem){
   const i = cart.findIndex(it => sameKey(it, newItem));
-  if (i >= 0) cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
-  else cart.push(newItem);
+  if (i >= 0) {
+    cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
+    if (!cart[i].code && newItem.code) cart[i].code = newItem.code; // keep code if present
+  } else {
+    cart.push(newItem);
+  }
   renderCart();
 }
 function setPrintEnabled(on){
@@ -443,12 +449,14 @@ proceedBtn.addEventListener('click', async ()=>{
       customer_name: name,
       phone,
       items: cart.map(i => ({
-        brand: i.brand, category: i.category, size: i.size,
-        qty: Number(i.qty||0),
-        mrp_price: Number(i.mrp_price||0),
-        bought_price: Number(i.bought_price||0),
-        price: Number(i.price||0)
-      })),
+  code: (i.code || ""),                          // <-- IMPORTANT
+  brand: i.brand, category: i.category, size: i.size,
+  qty: Number(i.qty||0),
+  mrp_price: Number(i.mrp_price||0),
+  bought_price: Number(i.bought_price||0),
+  price: Number(i.price||0)
+})),
+
       discount: appliedDiscount,
       preview: true // do NOT save
     };
