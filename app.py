@@ -45,13 +45,21 @@ def create_app() -> Flask:
 
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
+        import re
         copies = int((request.args.get("copies") or "1").strip() or 1)
         invoice = get_invoice_text(invoice_id)
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
 
-        # --- super-basic TSPL layout; we’ll tune after you test ---
-        lines = invoice.splitlines()
+        # Strip time from the "Date:" part, keep only DD-MM-YYYY
+        # Works whether Date is on its own line or shares the line with "Invoice:"
+        def strip_time(line: str) -> str:
+            # Match "...Date: 01-09-2025 06:20 PM" -> keep "...Date: 01-09-2025"
+            return re.sub(r"(Date:\s*\d{2}-\d{2}-\d{4}).*$", r"\1", line)
+
+        lines = [strip_time(l) for l in invoice.splitlines()]
+
+        # TSPL render
         y = 20
         dy = 28
         tspl = [
@@ -63,11 +71,12 @@ def create_app() -> Flask:
         ]
         for line in lines[:250]:  # safety bound
             safe = line.replace('"', "'")
-            tspl.append(f'TEXT 20,{y},"0",0,1,1,"{safe}"')
+            tspl.append(f'TEXT 10,{y},"0",0,1,1,"{safe}"')  # left margin 10 (was 20)
             y += dy
         tspl.append(f"PRINT {copies},1")
 
         return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
+
 
     # --- Admin helpers (PIN-based; minimal just for History page) ---
     def is_admin() -> bool:

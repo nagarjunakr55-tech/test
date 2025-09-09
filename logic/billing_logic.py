@@ -243,12 +243,13 @@ def calculate_totals(items, discount_input: str):
 # Invoice text (monospace)
 # ---------------------------------
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
-    # Slightly narrower to avoid right-edge clipping on 3" printers
+    # Tighter width to stop right-edge clipping on 3" printers
     COLS = 39
 
-    # 2 +1 +14 +1 +3 +1 +2 +1 +7 +1 +6 = 39
+    # Width plan with single spaces between columns:
+    # 2 +1 +11 +1 +3 +1 +2 +1 +7 +1 +6 = 36  (<= COLS)
     W_NO   = 2
-    W_BR   = 14
+    W_BR   = 11   # brand a bit tighter
     W_SZ   = 3
     W_Q    = 2
     W_MRP  = 7
@@ -264,7 +265,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         "#6-2-52,",
         "D L Road, Hindupur,",
         "Satya Sai (D), AP-515201",
-        "Phone: 8106204688"
+        "Phone: 8106204688",
     ]
     for s in header:
         lines.append(s.center(COLS))
@@ -272,7 +273,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append("-" * COLS)
 
     # Date/Invoice line (left/right same row)
-    today_str = india_date_str()
+    today_str = india_date_str()  # keeps time in stored invoice
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
@@ -286,8 +287,8 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     header_row = (
         f"{'No':>{W_NO}} "
         f"{'Brand':<{W_BR}} "
-        f"{'Sz':<{W_SZ}} "
-        f"{'Q':>{W_Q}} "
+        f"{'Size':<{W_SZ}} "
+        f"{'Qty':>{W_Q}} "
         f"{'MRP':>{W_MRP}} "
         f"{'Price':>{W_PRC}}"
     )
@@ -315,7 +316,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append("-" * COLS)
 
     # Totals
-    LBL_W = 22  # label width to push numbers right within 39 cols
+    LBL_W = 20  # label width tuned for COLS=37
 
     disc_pct_text = ""
     if subtotal and float(discount_amt) > 0:
