@@ -243,37 +243,33 @@ def calculate_totals(items, discount_input: str):
 # Invoice text (monospace)
 # ---------------------------------
 def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
-    # Tighter width to stop right-edge clipping on 3" printers
-    COLS = 37
-
-    # Width plan with single spaces between columns:
-    # 2 +1 +11 +1 +3 +1 +2 +1 +7 +1 +6 = 36  (<= COLS)
+    # Narrower total width so 3" printers don't clip the right edge
+    COLS = 37  # safe on most 3"
     W_NO   = 2
-    W_BR   = 11   # brand a bit tighter
-    W_SZ   = 3
+    W_BR   = 12
+    W_SZ   = 2
     W_Q    = 2
-    W_MRP  = 7
+    W_MRP  = 6
     W_PRC  = 6
 
     def clamp(s, n): return (str(s)[:n]).ljust(n)
 
     lines = []
 
-    # Header
+    # Header (centered)
     header = [
         "DRIP",
         "#6-2-52,",
         "D L Road, Hindupur,",
         "Satya Sai (D), AP-515201",
-        "Phone: 8106204688",
+        "Phone: 8106204688"
     ]
     for s in header:
         lines.append(s.center(COLS))
-
     lines.append("-" * COLS)
 
-    # Date/Invoice line (left/right same row)
-    today_str = india_date_str()  # keeps time in stored invoice
+    # Left/Right info line
+    today_str = india_date_str()
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
@@ -283,8 +279,8 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append(clamp(cust_line, COLS))
     lines.append("-" * COLS)
 
-    # Table header
-    header_row = (
+    # Column header
+    header = (
         f"{'No':>{W_NO}} "
         f"{'Brand':<{W_BR}} "
         f"{'Size':<{W_SZ}} "
@@ -292,17 +288,15 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         f"{'MRP':>{W_MRP}} "
         f"{'Price':>{W_PRC}}"
     )
-    lines.append(header_row)
+    lines.append(header)
     lines.append("-" * COLS)
 
-    # Rows
     for idx, item in enumerate(items, start=1):
         brand = clamp(item.get("brand", ""), W_BR)
         size  = clamp(item.get("size", ""), W_SZ)
         qty   = int(item.get("qty", 1))
         mrp   = int(float(item.get("mrp_price", 0)))
         price = int(float(item.get("price", 0)))
-
         row = (
             f"{idx:>{W_NO}} "
             f"{brand} "
@@ -314,10 +308,9 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         lines.append(row)
 
     lines.append("-" * COLS)
+    LBL_W = 18
 
-    # Totals
-    LBL_W = 20  # label width tuned for COLS=37
-
+    # Effective discount % (derived)
     disc_pct_text = ""
     if subtotal and float(discount_amt) > 0:
         eff = (float(discount_amt) / float(subtotal)) * 100.0
@@ -329,14 +322,11 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
 
     total_label = "Total"
     lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
-
     lines.append("-" * COLS)
     lines.append("Thank you for shopping with DRIP!".center(COLS))
     lines.append(" " * COLS)
 
     return "\n".join(lines)
-
-
 
 # ---------------------------------
 # Persistence
