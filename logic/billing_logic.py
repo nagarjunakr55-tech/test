@@ -14,6 +14,7 @@ try:
 except Exception:
     from pytz import timezone as ZoneInfo  # fallback
 
+
 def ist_now():
     """Return current time in Asia/Kolkata."""
     try:
@@ -23,11 +24,17 @@ def ist_now():
         tz = timezone("Asia/Kolkata")
     return datetime.now(tz)
 
-def india_date_str(dt=None):
-    """Format as DD-MM-YYYY hh:mm AM/PM (e.g., 01-09-2025 06:20 PM)."""
+
+def india_date_str(dt=None, include_time: bool = True):
+    """
+    Format as:
+      - DD-MM-YYYY hh:mm AM/PM when include_time=True
+      - DD-MM-YYYY                when include_time=False
+    """
     if dt is None:
         dt = ist_now()
-    return dt.strftime("%d-%m-%Y %I:%M %p")
+    return dt.strftime("%d-%m-%Y %I:%M %p") if include_time else dt.strftime("%d-%m-%Y")
+
 
 # ---------------------------------
 # Bootstrap tables (Postgres)
@@ -76,7 +83,7 @@ def ensure_tables():
     except Exception:
         pass
 
-    # NEW: per-barcode sold quantities
+    # Per-barcode sold quantities
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sales_barcodes (
             id SERIAL PRIMARY KEY,
@@ -91,6 +98,7 @@ def ensure_tables():
     conn.commit()
     cur.close()
     conn.close()
+
 
 # ---------------------------------
 # Product lookups
@@ -122,6 +130,7 @@ def find_product_by_barcode(code: str):
         "price": row[3],   # default selling price
         "qty": 1
     }
+
 
 def search_products(brand: str = "", category: str = "", size: str = "", limit: int = 20):
     sql = """
@@ -162,6 +171,7 @@ def search_products(brand: str = "", category: str = "", size: str = "", limit: 
         })
     return out
 
+
 def get_last_customer_name(phone: str):
     conn = get_connection()
     cur = conn.cursor()
@@ -175,6 +185,7 @@ def get_last_customer_name(phone: str):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
+
 
 # ---------------------------------
 # Invoice ID
@@ -190,10 +201,12 @@ def generate_unique_invoice_id() -> str:
             conn.close()
             return candidate
 
+
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
 _ALLOWED_PCTS = {5, 10, 15, 20, 25, 30}
+
 
 def calculate_totals(items, discount_input: str):
     """
@@ -239,18 +252,32 @@ def calculate_totals(items, discount_input: str):
         "gst": round(gst, 2),
     }
 
+
 # ---------------------------------
 # Invoice text (monospace)
 # ---------------------------------
-def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subtotal, gst_amount, grand_total, discount_amt):
-    # Narrower total width so 3" printers don't clip the right edge
-    COLS = 37  # safe on most 3"
-    W_NO   = 2
-    W_BR   = 12
-    W_SZ   = 2
-    W_Q    = 2
-    W_MRP  = 6
-    W_PRC  = 6
+def generate_invoice_text(
+    invoice_id,
+    customer_name,
+    customer_phone,
+    items,
+    subtotal,
+    gst_amount,
+    grand_total,
+    discount_amt,
+    show_time: bool = True,   # << NEW: control time on/off in Date
+):
+    # Narrow total width so 3" printers don't clip the right edge
+    COLS = 38  # safe on most 3"
+
+    # Tweaked widths for better alignment on thermal printers
+    # Sum with spaces must stay within COLS
+    W_NO   = 2   # "No"
+    W_BR   = 12  # "Brand"
+    W_SZ   = 4   # "Size" (wider to match header)
+    W_Q    = 3   # "Qty"  (wider to match header)
+    W_MRP  = 6   # "MRP"  (numeric, right-aligned)
+    W_PRC  = 6   # "Price"(numeric, right-aligned)
 
     def clamp(s, n): return (str(s)[:n]).ljust(n)
 
@@ -269,7 +296,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append("-" * COLS)
 
     # Left/Right info line
-    today_str = india_date_str()
+    today_str = india_date_str(include_time=show_time)
     left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
@@ -279,9 +306,9 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append(clamp(cust_line, COLS))
     lines.append("-" * COLS)
 
-    # Column header
+    # Column header (use the same widths/alignment as rows)
     header = (
-        f"{'No':>{W_NO}} "
+        f"{'No':<{W_NO}} "
         f"{'Brand':<{W_BR}} "
         f"{'Size':<{W_SZ}} "
         f"{'Qty':>{W_Q}} "
@@ -299,9 +326,9 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
         price = int(float(item.get("price", 0)))
         row = (
             f"{idx:>{W_NO}} "
-            f"{brand} "
-            f"{size} "
-            f"{qty:>{W_Q}} "
+            f"{brand:<{W_BR}} "
+            f"{size:<{W_SZ}} "
+            f"{qty:<{W_Q}} "
             f"{mrp:>{W_MRP}} "
             f"{price:>{W_PRC}}"
         )
@@ -327,6 +354,7 @@ def generate_invoice_text(invoice_id, customer_name, customer_phone, items, subt
     lines.append(" " * COLS)
 
     return "\n".join(lines)
+
 
 # ---------------------------------
 # Persistence
@@ -388,6 +416,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     cur.close()
     conn.close()
 
+
 # ---------------------------------
 # Queries for history & reprint
 # ---------------------------------
@@ -410,6 +439,7 @@ def get_invoices(search_term=""):
     rows = cur.fetchall()
     conn.close()
     return rows
+
 
 def get_invoice_text(invoice_id):
     conn = get_connection()

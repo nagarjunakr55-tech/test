@@ -51,22 +51,19 @@ def create_app() -> Flask:
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
 
-        # --- Strip time from the "Date:" portion ONLY for printing ---
-        # Matches: Date: 01-09-2025 06:20 PM  -> keep "Date: 01-09-2025"
-        def _strip_time_on_date_line(line: str) -> str:
-            # Look for "Date: DD-MM-YYYY ..." and cut after the date
-            m = re.search(r"(Date:\s*\d{2}-\d{2}-\d{4})", line)
-            if m:
-                return m.group(1)
-            return line
+        # Pattern: keep only "Date: DD-MM-YYYY" and drop the clock that may follow
+        # Works even when "Date: ..." is in the middle of the line with "Invoice: ..."
+        date_only_pat = re.compile(
+            r"(Date:\s*\d{2}-\d{2}-\d{4})(?:\s+\d{2}:\d{2}(?:\s*[AP]M)?)?"
+        )
 
         lines = []
         for ln in invoice.splitlines():
-            if "Date:" in ln:
-                ln = _strip_time_on_date_line(ln)
+            # Replace the Date part inline; leaves the rest of the line unchanged
+            ln = date_only_pat.sub(r"\1", ln)
             lines.append(ln)
 
-        # --- TSPL layout (unchanged) ---
+        # Build TSPL
         y = 20
         dy = 28
         tspl = [
@@ -76,13 +73,15 @@ def create_app() -> Flask:
             "REFERENCE 0,0",
             "CLS",
         ]
-        for line in lines[:250]:  # safety bound
+        for line in lines[:250]:
             safe = line.replace('"', "'")
             tspl.append(f'TEXT 20,{y},"0",0,1,1,"{safe}"')
             y += dy
         tspl.append(f"PRINT {copies},1")
 
         return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
+
+
 
 
     # --- Admin helpers (PIN-based; minimal just for History page) ---
