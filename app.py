@@ -23,7 +23,6 @@ from db import get_connection
 from labels import labels_bp
 from inventory import inventory_bp
 from flask import send_from_directory
-from auth_bp import auth_bp
 # from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
 
 def create_app() -> Flask:
@@ -114,6 +113,12 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("history"))
 
+    @app.post("/logout")
+    def logout():
+        session.pop("user", None)
+        flash("Logged out.", "info")
+        return redirect(url_for("login"))    
+
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
 
@@ -168,7 +173,6 @@ def create_app() -> Flask:
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
     app.register_blueprint(inventory_bp)
-    app.register_blueprint(auth_bp) 
 
     # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")
