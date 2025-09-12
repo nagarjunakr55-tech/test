@@ -76,8 +76,10 @@ def _guard():
         return redirect(url_for("auth.login", next=nxt))
 
 
-@auth_bp.route("/logout")
+# auth_bp.py
+@auth_bp.route("/logout", methods=["POST"])
 def logout():
     session.pop("user", None)
     flash("Logged out.", "info")
     return redirect(url_for("auth.login"))
+

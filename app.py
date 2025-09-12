@@ -108,15 +108,11 @@ def create_app() -> Flask:
         # back to /history with error flag so template can show "Invalid PIN"
         return redirect(url_for("history", err="badpin"))
 
-    @app.route("/admin/logout", methods=["GET", "POST"])
+    @app.post("/admin/logout")
     def admin_logout():
-     
-        session.pop("user", None)       # user logged out
-        session.pop("is_admin", None)   # admin off (optional)
         session.clear()
-
-        return redirect(url_for("auth.login")) 
-
+        return redirect(url_for("history"))
+   
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation

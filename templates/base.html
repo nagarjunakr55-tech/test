@@ -155,7 +155,11 @@ button:hover, .btn:hover{ filter: brightness(.95); }
 
 
 
-  <a href="{{ url_for('admin_logout') }}" class="logout">Logout</a>
+  <!-- base.html -->
+<form action="{{ url_for('auth.logout') }}" method="post" style="display:inline;">
+  <button type="submit" class="logout">Logout</button>
+</form>
+
 <span class="spacer"></span>
 
 
