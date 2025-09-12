@@ -115,7 +115,7 @@ def create_app() -> Flask:
         session.pop("is_admin", None)   # admin off (optional)
         session.clear()
 
-        return redirect(url_for("history"))
+        return redirect(url_for("auth.login")) 
 
 
     # Admin actions used by history.html
