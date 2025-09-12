@@ -116,8 +116,9 @@ def create_app() -> Flask:
     @app.route("/logout", methods=["GET","POST"])
     def logout():
         session.pop("user", None)
+        session.clear()
         flash("Logged out.", "info")
-        return redirect(url_for("billing"))  # or "history"
+        return redirect(url_for("billing")) 
 
    
 
