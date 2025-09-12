@@ -109,8 +109,8 @@
 
 <!-- Totals + discount -->
 <div class="row" style="margin-top:10px;">
-  <label for="discount" class="nowrap">Discount</label>
-  <input id="discount" class="input-sm"  autocomplete="off" inputmode="decimal">
+  
+  <input id="discount" class="input-sm" autocomplete="off" inputmode="numeric" pattern="\d{2}" maxlength="2" title="Enter a 2-digit number (10–99)" style="width:2.5em; max-width:40px; text-align:center; padding:6px;">
   <button id="applyDiscount"
         style="background:#2196f3;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
     Discount
