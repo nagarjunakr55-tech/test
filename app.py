@@ -113,11 +113,12 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("history"))
 
-    @app.route("/logout", methods=["GET", "POST"])
+    @app.route("/logout", methods=["GET","POST"])
     def logout():
         session.pop("user", None)
         flash("Logged out.", "info")
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("billing"))  # or "history"
+
    
 
     # Admin actions used by history.html
