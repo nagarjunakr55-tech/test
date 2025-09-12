@@ -6,7 +6,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response,flash
 )
 
-from logic.billing_logic import (
+from billing_logic import (
     ensure_tables,
     generate_unique_invoice_id,
     generate_invoice_text,
@@ -113,12 +113,12 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("history"))
 
-    @app.route("/logout", methods=["GET","POST"])
+    @app.route("/logout", methods=["GET", "POST"])
     def logout():
-        session.pop("user", None)
-        session.clear()
+        session.clear()                     # clears user + admin flags
         flash("Logged out.", "info")
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("auth.login"))   # << use your login route
+
 
    
 
@@ -153,6 +153,25 @@ def create_app() -> Flask:
         "/receipt/lines/",   # <-- allow Android to fetch plain lines
         "/health", "/healthz", "/diag",
     )
+    PUBLIC_ENDPOINTS = {
+    "static", "favicon", "health", "healthz", "diag",
+    "__routes", "__endpoint_locator",
+    "auth.login",           # login page
+    "logout",               # allow reaching logout
+    "admin_login",          # allow admin PIN post
+    "receipt_lines", "receipts_tspl",  # public Android fetchers
+    }
+
+
+    
+    @app.before_request
+    def require_login_guard():
+        # If endpoint is unknown (e.g., 404) or explicitly public, skip
+        if not request.endpoint or request.endpoint in PUBLIC_ENDPOINTS:
+            return
+        # Redirect to login if not authenticated
+        if not session.get("user"):
+            return redirect(url_for("auth.login", next=request.full_path))
 
     @app.before_request
     def allow_public_endpoints():
