@@ -152,10 +152,24 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <a href="{{ url_for('inventory.inventory_page') }}">Inventory</a>
 
 
-  {% if session.get('user') %}
-  <a href="{{ url_for('admin_logout') }}" class="logout">
-    Logout
-  </a>
+  <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+
+  <span class="spacer"></span>
+
+
+
+{# --- Optional: Admin PIN toggle stays separate --- #}
+{% if is_admin %}
+  <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline; margin-left:8px;">
+    <button class="btn-warn" type="submit" style="padding:6px 10px; border-radius:6px;">Admin Off</button>
+  </form>
+{% else %}
+  <form method="post" action="{{ url_for('admin_login') }}" style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;">
+    <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+           placeholder="PIN" aria-label="Admin PIN" autocomplete="off"
+           style="width:60px; text-align:center; padding:6px; font-size:14px; border-radius:6px; border:1px solid #ccc;" />
+    <button class="btn-green" type="submit" style="padding:6px 10px; border-radius:6px;">Admin</button>
+  </form>
 {% endif %}
 
 </nav>
