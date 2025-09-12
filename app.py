@@ -110,18 +110,13 @@ def create_app() -> Flask:
 
     @app.route("/admin/logout", methods=["GET", "POST"])
     def admin_logout():
+     
+        session.pop("user", None)       # user logged out
+        session.pop("is_admin", None)   # admin off (optional)
         session.clear()
+
         return redirect(url_for("history"))
 
-
-    @app.route("/logout", methods=["GET","POST"])
-    def logout():
-        session.pop("user", None)
-        session.clear()
-        flash("Logged out.", "info")
-        return redirect(url_for("billing")) 
-
-   
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
