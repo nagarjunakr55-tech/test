@@ -23,6 +23,8 @@ from db import get_connection
 from labels import labels_bp
 from inventory import inventory_bp
 from flask import send_from_directory
+from reports_bp import reports_bp
+
 # from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
 
 def create_app() -> Flask:
@@ -168,6 +170,7 @@ def create_app() -> Flask:
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
     app.register_blueprint(inventory_bp)
+    app.register_blueprint(reports_bp)
 
     # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")

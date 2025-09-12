@@ -243,7 +243,8 @@ def calculate_totals(items, discount_input: str):
     else:
         grand_total = subtotal
 
-    gst = grand_total - (grand_total / 1.05)
+    #gst = grand_total - (grand_total / 1.05)
+    gst = 0
 
     return {
         "subtotal": round(subtotal, 2),

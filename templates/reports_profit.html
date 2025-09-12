@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Monthly Profit</h3>
+
+<div class="table-responsive">
+  <table>
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>Invoices</th>
+        <th>Spent</th>
+        <th>Profit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.label }}</td>
+        <td>{{ r.invoices }}</td>
+        <td>₹{{ '%.2f'|format(r.spent) }}</td>
+        <td><strong>₹{{ '%.2f'|format(r.profit) }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th>Total</th>
+        <th>{{ totals.invoices }}</th>
+        <th>₹{{ '%.2f'|format(totals.spent) }}</th>
+        <th>₹{{ '%.2f'|format(totals.profit) }}</th>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endblock %}
