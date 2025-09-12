@@ -148,12 +148,15 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <a href="{{ url_for('billing') }}">Billing</a>
   <a href="{{ url_for('history') }}">History</a>
    <!-- <a href="{{ url_for('home') }}">Home</a>-->
+   {% if is_admin %}
   <a href="{{ url_for('labels.page') }}">Barcodes</a>
+  {% endif %}
   <a href="{{ url_for('inventory.inventory_page') }}">Inventory</a>
 
 
-  
+
   <a href="{{ url_for('logout') }}" class="logout">Logout</a>
+<span class="spacer"></span>
 
 
 
@@ -171,7 +174,11 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   </form>
 {% endif %}
 
+
+
+
 </nav>
+
 
   </header>
 
