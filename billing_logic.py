@@ -354,6 +354,8 @@ def generate_invoice_text(
     lines.append("Thank you for shopping with DRIP!".center(COLS))
     lines.append(" " * COLS)
 
+    MARGIN = 3  # shift by 3 chars; set to 2 if you want 2
+    lines = [(" " * MARGIN) + line for line in lines]
     return "\n".join(lines)
 
 
