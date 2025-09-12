@@ -118,7 +118,7 @@ def create_app() -> Flask:
         session.pop("user", None)
         session.clear()
         flash("Logged out.", "info")
-        return redirect(url_for("billing")) 
+        return redirect(url_for("auth.login"))
 
    
 
