@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from flask import (
-    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response,flash
 )
 
 from logic.billing_logic import (
@@ -113,11 +113,12 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("history"))
 
-    @app.post("/logout")
+    @app.route("/logout", methods=["GET", "POST"])
     def logout():
         session.pop("user", None)
         flash("Logged out.", "info")
-        return redirect(url_for("login"))    
+        return redirect(url_for("auth.login"))
+   
 
     # Admin actions used by history.html
     from decimal import Decimal, InvalidOperation
