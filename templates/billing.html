@@ -372,13 +372,14 @@ function renderCart() {
       : `${parseInt(base,10)}`;
 
     const priceCell = `
-      <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
-        ${IS_ADMIN
-          ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-                    inputmode="numeric" pattern="\\d*" value="${parseInt(base,10)}">`
-          : ''}
-        <span>${displayText}</span>
-      </div>`;
+  <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
+    ${IS_ADMIN
+      ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+                inputmode="numeric" pattern="\\d*" value="${after.toFixed(2)}">`
+      : ''}
+    <span>${displayText}</span>
+  </div>`;
+
 
     const discCell =
       `<div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
@@ -453,16 +454,47 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
 });
 
 // Tidy & live-apply on change
+// Admin edits AFTER price via sp-input; compute disc_pct from base (price). Base never changes.
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!e.target.classList.contains('disc-input')) return;
+  if (!e.target.classList.contains('sp-input')) return;
+
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
-  const v = parseFloat(e.target.value);
-  const pct = (isNaN(v) || v < 0) ? 0 : v;
-  e.target.value = pct;
-  cart[i].disc_pct = pct;
+
+  const base   = Number(cart[i].price || 0);         // original SP (immutable)
+  const bought = Number(cart[i].bought_price || 0);
+  const afterInput = parseFloat(e.target.value);
+
+  // Invalid → revert to current effective after
+  const currentPct  = Number(cart[i].disc_pct || 0);
+  const currentAfter = currentPct > 0 ? Math.round(base * (1 - currentPct/100)) : base;
+
+  if (isNaN(afterInput) || afterInput <= 0) {
+    e.target.value = currentAfter.toFixed(2);
+    return;
+  }
+
+  // If admin sets after >= base → no discount
+  if (afterInput >= base) {
+    cart[i].disc_pct = 0;
+    e.target.value = base.toFixed(2);
+    renderCart();
+    return;
+  }
+
+  // Guard: unit after must be >= bought + 150
+  if (afterInput < (bought + 150)) {
+    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
+    e.target.value = currentAfter.toFixed(2);
+    return;
+  }
+
+  // Compute and store per-row discount % from base → after
+  const pct = (1 - (afterInput / base)) * 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;  // keep 2 decimals
   renderCart();
 });
+
 
 
 
