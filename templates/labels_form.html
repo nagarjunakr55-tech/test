@@ -22,6 +22,33 @@
   .btn { display:inline-block; padding:8px 12px; background:#1976d2; color:#fff; text-decoration:none; border-radius:6px; }
   .btn:disabled { opacity:.6; pointer-events:none; }
 </style>
+<style>
+/* --- Button palette overrides --- */
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter .15s ease, transform .02s ease;
+}
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn:hover:not(:disabled) { filter: brightness(.95); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid #111827; outline-offset: 2px; }
+
+/* Individual buttons */
+#btnSaveOnly { background:#f59e0b; color:#fff; }     /* Save = amber */
+#btnMobile   { background:#22c55e; color:#fff; }     /* Print on Mobile = green */
+#btnPc       { background:#2563eb; color:#fff; }     /* Print on PC = blue */
+
+/* Back link button in the action row */
+.form-row a.btn { background:#7c3aed; color:#fff; }  /* purple */
+
+/* “Re-use” buttons in Recent Barcodes table */
+table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
+</style>
+
 
 <!-- One-page form; no redirect needed -->
 <form id="labelForm" onsubmit="return false;">
@@ -44,18 +71,19 @@
            type="text" inputmode="decimal" pattern="[0-9]*"
            value="{{ sp_val or '' }}"
            tabindex="4" enterkeyhint="next" autocomplete="off" />
-
-    <select id="size" name="size" required tabindex="5" enterkeyhint="next">
-      <!-- options injected by JS based on category -->
-    </select>
-
-    <select id="category" name="category" required tabindex="6" enterkeyhint="next">
+           <select id="category" name="category" required tabindex="6" enterkeyhint="next">
       <option value="">Category…</option>
       <option value="Shirt">Shirt</option>
       <option value="Pant">Pant</option>
       <option value="Short">Short</option>
       <option value="T-Shirt">T-Shirt</option>
     </select>
+
+    <select id="size" name="size" required tabindex="5" enterkeyhint="next">
+      <!-- options injected by JS based on category -->
+    </select>
+
+    
   </div>
 
   <div class="form-row" style="display:flex; align-items:center; gap:12px; max-width:420px;">
@@ -89,29 +117,49 @@
   <h3 style="margin-top:24px;">Recent Barcodes</h3>
   <table class="barcode-list">
     <thead>
-      <tr>
-        <th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th><th>Size</th><th>Category</th><th>Code</th><th>Action</th>
-      </tr>
+  <tr>
+    <th>Action</th><th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th>
+    <th>Size</th><th>Category</th><th>Code</th><th>Date</th>
+    {% if is_admin %}<th>Delete</th>{% endif %}
+  </tr>
+</thead>
     </thead>
     <tbody>
-      {% for r in recent_rows %}
-      <tr>
-        <td>{{ r[0] }}</td>
-        <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
-        <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
-        <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
-        <td>{{ r[4] }}</td>
-        <td>{{ r[5] }}</td>
-        <td><code>{{ r[6] }}</code></td>
-        <td>
-          <button class="btn" type="button"
-                  onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
-            Re-use
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
+  {% for r in recent_rows %}
+  <tr>
+    <td>
+      <button class="btn" type="button"
+              onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
+        Re-use
+      </button>
+    </td>
+    <td>{{ r[0] }}</td>
+    <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
+    <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
+    <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
+    <td>{{ r[4] }}</td>
+    <td>{{ r[5] }}</td>
+    <td><code>{{ r[6] }}</code></td>
+    <td>
+      {% if r[7] %}
+        {{ r[7].strftime("%d-%m-%Y") }}
+      {% endif %}
+    </td>
+    
+    {% if is_admin %}
+    <td>
+      <form method="post"
+            action="{{ url_for('labels.barcodes_delete', code=r[6]) }}"
+            onsubmit="return confirm('Delete barcode {{ r[6] }}?');"
+            style="display:inline;">
+        <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</tbody>
+
   </table>
 {% endif %}
 
@@ -136,8 +184,8 @@
   });
 
   // ----- Size options based on category -----
-  const sizesAlpha = ["S","M","L","XL","XXL"];
-  const sizesNumeric = ["28","30","32","34","36","38","40","42"];
+  const sizesAlpha = ["S","M","L","XL","XXL","3XL","4XL"];
+  const sizesNumeric = ["28","30","32","34","36","38","40","42","44"];
   const sizeSel = document.getElementById("size");
   const catSel  = document.getElementById("category");
 
