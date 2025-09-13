@@ -3,20 +3,14 @@ import os
 import platform
 import random
 import string
-import re
 from typing import Optional
-from urllib.parse import quote as urlquote
 
 from flask import (
-    Blueprint, Response, render_template, request, jsonify, current_app,
-    session, redirect, url_for, flash
+    Blueprint, Response, render_template, request, jsonify, current_app
 )
+from urllib.parse import quote as urlquote
 
-from db import get_connection
-from datetime import datetime
-from zoneinfo import ZoneInfo   # Python 3.9+
-
-IST = ZoneInfo("Asia/Kolkata")
+from db import get_connection  # your existing DB helper
 
 labels_bp = Blueprint("labels", __name__, url_prefix="/labels")
 labels_bp.strict_slashes = False  # avoid trailing-slash 404s
@@ -29,12 +23,7 @@ except Exception:
     WIN32_AVAILABLE = False
 
 
-# --- Time helpers -------------------------------------------------------------
-def now_ist() -> datetime:
-    return datetime.now(IST)
-
-
-# --- Text helpers -------------------------------------------------------------
+# --- Helpers ------------------------------------------------------------------
 def _to_crlf(s: str) -> str:
     """Normalize newlines to CRLF for TSPL printers."""
     return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
@@ -47,19 +36,19 @@ def safe_int(x) -> Optional[int]:
     if s == "" or s.lower() in {"none", "null", "nan"}:
         return None
     try:
-        return int(float(s))  # handle "123.0" too
+        return int(float(s))  # handle "123.0" gracefully
     except Exception:
         return None
 
 
-# --- Schema bootstraps --------------------------------------------------------
+
 def ensure_barcode_table():
-    """Create barcode_catalog table (idempotent)."""
+    """Create table with integer prices (idempotent)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                CREATE TABLE IF NOT EXISTS public.barcode_catalog (
+                CREATE TABLE IF NOT EXISTS barcode_catalog (
                     id SERIAL PRIMARY KEY,
                     brand TEXT,
                     mrp INTEGER,
@@ -69,50 +58,17 @@ def ensure_barcode_table():
                     category TEXT,
                     barcode_data TEXT UNIQUE,
                     status TEXT DEFAULT 'available',
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    created_at TIMESTAMP DEFAULT NOW()
                 );
                 """
             )
         conn.commit()
 
 
-def ensure_print_events_table():
-    """Create barcode_print_events table (idempotent)."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS public.barcode_print_events (
-                    id SERIAL PRIMARY KEY,
-                    code TEXT NOT NULL,
-                    copies INTEGER NOT NULL DEFAULT 1,
-                    how TEXT,                            -- 'mobile' or 'pc'
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                );
-                """
-            )
-        conn.commit()
 
-
-def log_print_event(code: str, copies: int, how: str):
-    """Insert a print event row. Safe no-op on errors."""
-    try:
-        ensure_print_events_table()
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO public.barcode_print_events (code, copies, how, created_at) VALUES (%s, %s, %s, %s)",
-                    (code, max(1, int(copies or 1)), (how or "").lower()[:16], now_ist())
-                )
-            conn.commit()
-    except Exception:
-        current_app.logger.exception("log_print_event failed")
-
-
-# --- Catalog ops --------------------------------------------------------------
 def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
     sql = """
-    SELECT barcode_data FROM public.barcode_catalog
+    SELECT barcode_data FROM barcode_catalog
      WHERE brand=%s AND size=%s AND category=%s
        AND ((mrp = %s) OR (mrp IS NULL AND %s IS NULL))
        AND ((bought_price = %s) OR (bought_price IS NULL AND %s IS NULL))
@@ -129,28 +85,29 @@ def find_existing_code(brand, size, category, mrp, bought, sp) -> Optional[str]:
             return row[0] if row else None
 
 
+
+
 def insert_code(brand, size, category, mrp, bought, sp, code: str) -> None:
+    sql = """
+    INSERT INTO barcode_catalog
+      (brand, mrp, bought_price, selling_price, size, category, barcode_data, status)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, 'available')
+    ON CONFLICT (barcode_data) DO NOTHING
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO public.barcode_catalog
-                  (brand, mrp, bought_price, selling_price, size, category, barcode_data, status, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'available', %s)
-                ON CONFLICT (barcode_data) DO NOTHING
-                """,
-                (brand, mrp, bought, sp, size, category, code, now_ist())
-            )
+            cur.execute(sql, (brand, mrp, bought, sp, size, category, code))
         conn.commit()
 
 
-# --- TSPL generation ----------------------------------------------------------
 def tspl_for_item(code: str, brand: str, size: str,
                   mrp: Optional[float], sp: Optional[float],
                   copies: int = 1) -> str:
     """
     Build TSPL for 50.8 x 25 mm label. Copies are embedded so the printer repeats.
     """
+    # Simple layout matching your previous design
+    # Center "DRIP" roughly; other fields at fixed positions
     lines = []
     if mrp is not None:
         try:
@@ -192,18 +149,11 @@ def print_tspl_windows(tspl_text: str, printer_name: str) -> None:
         win32print.ClosePrinter(hPrinter)
 
 
-# --- Routes: page -------------------------------------------------------------
+# --- Pages & APIs -------------------------------------------------------------
+
 @labels_bp.get("/", endpoint="page")
 def labels_page():
     """Form + recent list + reuse (all on one page)."""
-    # Ensure schemas exist so the page never crashes
-    ensure_barcode_table()
-    try:
-        ensure_print_events_table()
-    except Exception:
-        # non-fatal
-        current_app.logger.warning("print-events table ensure failed")
-
     # Prefill from query (optional)
     brand = (request.args.get("brand") or "").strip()
     mrp = request.args.get("mrp")
@@ -219,13 +169,11 @@ def labels_page():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT brand, mrp, bought_price, selling_price, size, category, barcode_data, created_at
-                FROM public.barcode_catalog
+                FROM barcode_catalog
                 ORDER BY created_at DESC NULLS LAST, id DESC
-                LIMIT 500
+                LIMIT 100
             """)
             rows = cur.fetchall()
-
-    is_admin = bool(session.get("is_admin"))
 
     return render_template(
         "labels_form.html",
@@ -236,29 +184,23 @@ def labels_page():
         size_val=size,
         category_val=category,
         copies_val=copies,
-        recent_rows=rows,
-        is_admin=is_admin
+        recent_rows=rows
     )
 
 
-# --- Routes: TSPL file for Android app ---------------------------------------
 @labels_bp.get("/tspl/<path:code>.txt", endpoint="tspl_for_code")
 def tspl_for_code(code: str):
     """
     Serve TSPL for a code. Accepts ?copies= so Android can fetch with repetitions
     embedded (the app then sends the job once over BT).
     """
-    try:
-        copies = int((request.args.get("copies") or "1").strip() or "1")
-    except Exception:
-        copies = 1
-
+    copies = int((request.args.get("copies") or "1").strip() or "1")
     brand = size = None
     mrp = sp = None
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT brand,size,mrp,selling_price FROM public.barcode_catalog WHERE barcode_data=%s LIMIT 1",
+                "SELECT brand,size,mrp,selling_price FROM barcode_catalog WHERE barcode_data=%s LIMIT 1",
                 (code,)
             )
             row = cur.fetchone()
@@ -282,105 +224,18 @@ PRINT {max(1, copies)},1
     return Response(tspl, mimetype="text/plain; charset=us-ascii")
 
 
-# --- Routes: delete barcode (admin) ------------------------------------------
-@labels_bp.post("/barcodes/<code>/delete", endpoint="barcodes_delete")
-def barcodes_delete(code: str):
-    """Hard delete a barcode row by its code (admin-only)."""
-    if not session.get("is_admin"):
-        flash("Admin only.", "error")
-        return redirect(url_for("labels.page"))
-
-    code = (code or "").strip().upper()
-    if not code:
-        flash("Invalid code.", "error")
-        return redirect(url_for("labels.page"))
-
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM public.barcode_catalog WHERE barcode_data=%s", (code,))
-            conn.commit()
-        flash(f"Deleted barcode {code}.", "success")
-    except Exception as e:
-        current_app.logger.exception("barcodes_delete failed")
-        flash(f"Delete failed: {e}", "error")
-
-    return redirect(url_for("labels.page"))
-
-
-# --- Routes: quick print API (mobile/pc) -------------------------------------
-CODE_RE = re.compile(r"^[A-Z0-9_-]{1,40}$")
-
-@labels_bp.post("/barcodes/<code>/exists", endpoint="barcodes_exists")  # kept endpoint compatibility
-@labels_bp.get("/barcodes/<code>/exists", endpoint="barcodes_exists")   # allow GET too
-def barcodes_exists(code: str):
-    """Return {ok, exists} for a proposed barcode string (barcode_data)."""
-    ensure_barcode_table()
-    code = (code or "").upper()
-    # Treat invalid code as "exists" so Save never enables for bad inputs
-    if not CODE_RE.match(code):
-        return jsonify(ok=True, exists=True)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s LIMIT 1",
-                (code,)
-            )
-            exists = cur.fetchone() is not None
-    return jsonify(ok=True, exists=exists)
-
-
-@labels_bp.post("/barcodes/create", endpoint="barcodes_create")
-def barcodes_create():
-    """Insert into barcode_catalog without printing; only if code is unique."""
-    ensure_barcode_table()
-    data = request.get_json(silent=True) or {}
-
-    brand    = (data.get("brand") or "").strip()
-    size     = (data.get("size") or "").strip()
-    category = (data.get("category") or "").strip()
-    code     = (data.get("code") or "").strip().upper()
-
-    mrp    = safe_int(data.get("mrp"))
-    bought = safe_int(data.get("bought"))
-    sp     = safe_int(data.get("sp"))
-
-    if not brand or not size or not category:
-        return jsonify(ok=False, error="missing_fields"), 400
-    if not CODE_RE.match(code):
-        return jsonify(ok=False, error="invalid_code"), 400
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s", (code,))
-            if cur.fetchone():
-                return jsonify(ok=False, error="code_exists"), 409
-
-            cur.execute("""
-                INSERT INTO public.barcode_catalog
-                  (brand, mrp, bought_price, selling_price, size, category, barcode_data, status, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'available', %s)
-            """, (brand, mrp, bought, sp, size, category, code, now_ist()))
-        conn.commit()
-    return jsonify(ok=True, code=code)
-
+from urllib.parse import quote as urlquote  # make sure this import exists at top
 
 @labels_bp.post("/quick_print", endpoint="quick_print")
 def quick_print():
-    """
-    Creates/looks up a barcode, returns deeplink for Android OR prints via Windows,
-    and logs a print event so Inventory can count printed copies.
-    """
     try:
-        ensure_barcode_table()
-
         data = request.get_json(silent=True) or request.form or {}
 
         brand = (data.get("brand") or "").strip()
         size = (data.get("size") or "").strip()
         category = (data.get("category") or "").strip()
 
+        # HTML posts these names: mrp, bought, sp
         mrp = safe_int(data.get("mrp"))
         bought = safe_int(data.get("bought"))
         sp = safe_int(data.get("sp"))
@@ -389,7 +244,6 @@ def quick_print():
             copies = int((data.get("copies") or 1) or 1)
         except Exception:
             copies = 1
-
         action = (data.get("action") or "mobile").strip().lower()
 
         if not brand or not size or not category:
@@ -405,7 +259,7 @@ def quick_print():
         if not code:
             code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
             try:
-                insert_code(brand, size, category, mrp, bought, sp, code)
+                insert_code(brand, size, category, mrp, bought, sp, code)  # commits inside
             except Exception:
                 current_app.logger.exception("insert_code failed (continuing)")
 
@@ -426,10 +280,6 @@ PRINT {max(1, copies)},1
 
         # --- Action: mobile vs pc ---
         if action == "mobile":
-            # Log the intended/initiated print (server-side). This is the signal
-            # used by Inventory to count "Printed" including copies/reuse.
-            log_print_event(code, copies, how="mobile")
-
             base = request.url_root.rstrip("/")
             deeplink = f"tspl://print?base={urlquote(base)}&code={urlquote(code)}&copies={copies}"
             return jsonify({"ok": True, "deeplink": deeplink, "code": code}), 200
@@ -438,10 +288,6 @@ PRINT {max(1, copies)},1
             try:
                 printer_name = current_app.config.get("DEFAULT_PRINTER_NAME", "4BARCODE 4B-2034PA")
                 print_tspl_windows(tspl, printer_name)
-
-                # PC print succeeded → log the event
-                log_print_event(code, copies, how="pc")
-
                 return jsonify({"ok": True, "code": code}), 200
             except Exception as e:
                 current_app.logger.exception("print_tspl_windows failed")
@@ -453,3 +299,61 @@ PRINT {max(1, copies)},1
     except Exception as e:
         current_app.logger.exception("quick_print crashed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+# --- Save-only / uniqueness APIs ---------------------------------------------
+import re
+CODE_RE = re.compile(r"^[A-Z0-9_-]{1,40}$")
+
+@labels_bp.get("/barcodes/<code>/exists", endpoint="barcodes_exists")
+def barcodes_exists(code: str):
+    """Return {ok, exists} for a proposed barcode string (barcode_data)."""
+    ensure_barcode_table()
+    code = (code or "").upper()
+    # Treat invalid code as "exists" so Save never enables for bad inputs
+    if not CODE_RE.match(code):
+        return jsonify(ok=True, exists=True)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s LIMIT 1",
+                (code,)
+            )
+            exists = cur.fetchone() is not None
+    return jsonify(ok=True, exists=exists)
+
+@labels_bp.post("/barcodes/create", endpoint="barcodes_create")
+def barcodes_create():
+    """Insert into barcode_catalog without printing; only if code is unique."""
+    ensure_barcode_table()
+    data = request.get_json(silent=True) or {}
+
+    brand    = (data.get("brand") or "").strip()
+    size     = (data.get("size") or "").strip()
+    category = (data.get("category") or "").strip()
+    code     = (data.get("code") or "").strip().upper()
+
+    # prices are INTEGER in your schema; use your helper
+    mrp    = safe_int(data.get("mrp"))
+    bought = safe_int(data.get("bought"))
+    sp     = safe_int(data.get("sp"))
+
+    if not brand or not size or not category:
+        return jsonify(ok=False, error="missing_fields"), 400
+    if not CODE_RE.match(code):
+        return jsonify(ok=False, error="invalid_code"), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Reject if already present
+            cur.execute("SELECT 1 FROM public.barcode_catalog WHERE barcode_data=%s", (code,))
+            if cur.fetchone():
+                return jsonify(ok=False, error="code_exists"), 409
+
+            cur.execute("""
+                INSERT INTO public.barcode_catalog
+                  (brand, mrp, bought_price, selling_price, size, category, barcode_data, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'available')
+            """, (brand, mrp, bought, sp, size, category, code))
+        conn.commit()
+    return jsonify(ok=True, code=code)
