@@ -396,8 +396,6 @@ def generate_invoice_text(
 # Persistence
 # ---------------------------------
 
-# ...
-
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
@@ -415,7 +413,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
             gst NUMERIC,
             grand_total NUMERIC,
             gstin TEXT,
-            date TIMESTAMP,             -- make this TIMESTAMP
+            date TEXT,
             invoice_text TEXT
         )
     """)
@@ -428,9 +426,9 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         )
     """)
 
-    # Use a real datetime (IST) for DB
-    date_dt = ist_now()
+    date_str = india_date_str()
 
+    # invoice header/body
     cur.execute("""
         INSERT INTO sales_history
         (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
@@ -438,10 +436,10 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         ON CONFLICT (invoice_id) DO NOTHING
     """, (
         invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, date_dt, invoice_text
+        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
     ))
 
-    # ... (rest unchanged)
+    # record barcode sales (skip manual items without a code)
     for it in items:
         code = (it.get("code") or "").strip()
         qty  = int(it.get("qty") or 0)
@@ -454,6 +452,8 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn.commit()
     cur.close()
     conn.close()
+
+
 
 
 
