@@ -48,6 +48,20 @@ nav a.logout{ background:var(--warn); }
   --muted:#6b7280;      /* gray buttons */
   --warn:#d32f2f;       /* danger buttons */
 }
+.admin-link {
+  background:none;
+  border:none;
+  padding:0;
+  margin:0;
+  color:#0366d6;
+  font-size:14px;
+  cursor:pointer;
+  text-decoration:none;
+}
+.admin-link:hover {
+  text-decoration:underline;
+}
+
 button, .btn{ background: var(--accent, #2563eb); color:#fff; }
 .btn-green{   background: var(--accent-2, #16a34a); }
 .btn-muted{   background: var(--muted, #6b7280); }
@@ -159,21 +173,55 @@ button:hover, .btn:hover{ filter: brightness(.95); }
 
 <span class="spacer"></span>
 
-{# --- Optional: Admin PIN toggle stays separate --- #}
 {% if is_admin %}
-  <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline; margin-left:8px;">
-    <button class="btn-warn" type="submit" style="padding:6px 10px; border-radius:6px;">Admin Off</button>
+  <!-- Logged-in: show simple "Admin Off" text link -->
+  <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline;">
+    <button type="submit" class="admin-link">Admin Off</button>
   </form>
 {% else %}
-  <form method="post" action="{{ url_for('admin_login') }}" style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;">
-    <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+  <!-- Logged-out: "Admin" text; clicking reveals the PIN form -->
+  <a href="#" id="adminLink" class="admin-link">Admin</a>
+
+  <form id="adminForm" method="post" action="{{ url_for('admin_login') }}"
+        style="display:none; margin-left:8px; align-items:center; gap:6px;">
+    <input type="hidden" name="next" value="{{ request.full_path or request.path }}">
+    <input id="adminPin" type="password" name="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4"
            placeholder="PIN" aria-label="Admin PIN" autocomplete="off"
-           style="width:60px; text-align:center; padding:6px; font-size:14px; border-radius:6px; border:1px solid #ccc;" />
-    <button class="btn-green" type="submit" style="padding:6px 10px; border-radius:6px;">Admin</button>
+           style="width:60px; text-align:center; padding:4px; font-size:14px; border-radius:4px; border:1px solid #ccc;" />
+    <button type="submit" class="admin-link">Go</button>
+    {% if request.args.get('err') == 'badpin' %}
+      <small style="color:#d32f2f;">Invalid PIN</small>
+    {% endif %}
   </form>
 {% endif %}
 
 
+
+
+<script>
+  (function () {
+    const link = document.getElementById('adminLink');
+    const form = document.getElementById('adminForm');
+    const pin  = document.getElementById('adminPin');
+
+    if (!link || !form) return;
+
+    function showForm() {
+      link.style.display = 'none';
+      form.style.display = 'inline-flex';
+      if (pin) pin.focus();
+    }
+
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      showForm();
+    });
+
+    // If server sent ?err=badpin, auto-open the form so the user can retry
+    const qp = new URLSearchParams(window.location.search);
+    if (qp.get('err') === 'badpin') showForm();
+  })();
+</script>
 
 
 </nav>
