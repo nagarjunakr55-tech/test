@@ -1,4 +1,4 @@
-# logic/billing_logic.py
+# billing_logic.py
 from db import get_connection
 from datetime import datetime
 import json
@@ -7,6 +7,9 @@ import string
 
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
+
+# Per-item guard padding: unit_after must be >= bought_price + PAD
+GUARD_PAD = 150
 
 # --- IST helpers --------------------------------------------------------------
 try:
@@ -205,62 +208,143 @@ def generate_unique_invoice_id() -> str:
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
-_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30,35}
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
+GUARD_PAD = 100  # minimum margin over bought price per unit
 
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
+GUARD_PAD = 100  # unit after-discount must be >= bought_price + GUARD_PAD
+
+def _parse_percent(di: str):
+    """Return float percent if parseable, else None."""
+    if not di:
+        return None
+    di = di.strip()
+    if di.endswith("%"):
+        di = di[:-1]
+    try:
+        return float(di)
+    except Exception:
+        return None
+
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
+_GUARD_PAD = 100  # backend safety: unit_after must be >= bought + 100
 
 def calculate_totals(items, discount_input: str):
+    """
+    Uses per-row item['disc_pct'] when > 0; otherwise applies a global percent from discount_input (e.g., "10" or "10%").
+    Returns items_effective with per-row effective_unit_price and effective_pct so the receipt can show (orig)after.
+    """
     if not items:
         raise ValueError("empty_cart")
 
-    subtotal = sum(float(i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
-    bought_total = sum(float(i.get("bought_price", 0)) * int(i.get("qty", 1)) for i in items)
+    # Parse global percent (percent codes only)
+    def _parse_pct(s: str):
+        if not s:
+            return 0.0
+        s = s.strip()
+        if s.endswith("%"):
+            s = s[:-1]
+        try:
+            return float(s)
+        except Exception:
+            return 0.0
 
-    di = (discount_input or "").strip()
-    discount_amt = 0.0
+    global_pct = _parse_pct(discount_input)
 
-    # parse percent; your UI only uses percent codes
-    def _parse_percent(di_: str):
-        if not di_:
-            return None
-        if di_.endswith("%"):
-            return float(di_[:-1])
-        # treat plain number as percent too, like before
-        if di_.replace(".", "", 1).isdigit():
-            return float(di_)
-        return None
+    subtotal = 0.0
+    grand_total = 0.0
+    discount_amt_total = 0.0
+    bought_total = 0.0
+    items_effective = []
 
-    pct = _parse_percent(di)
+    for it in items:
+        qty         = int(it.get("qty", 1))
+        unit_price  = float(it.get("price", 0))
+        unit_bought = float(it.get("bought_price", 0))
+        row_pct     = float(it.get("disc_pct") or 0.0)
 
-    if pct is not None:
-        # ✅ Per-item unit guard
+        eff_pct = row_pct if row_pct > 0 else (global_pct if global_pct > 0 else 0.0)
+        unit_after = unit_price * (1.0 - eff_pct/100.0)
+
+        # Per-unit guard
+        if eff_pct > 0 and unit_after < (unit_bought + _GUARD_PAD):
+            brand = it.get("brand") or ""
+            cat   = it.get("category") or ""
+            size  = it.get("size") or ""
+            raise ValueError(f"max_discount_item:{brand}/{cat}/{size}")
+
+        line_sub   = unit_price * qty
+        line_total = unit_after * qty
+        line_disc  = line_sub - line_total
+
+        subtotal            += line_sub
+        grand_total         += line_total
+        discount_amt_total  += line_disc
+        bought_total        += unit_bought * qty
+
+        out_it = dict(it)
+        out_it["effective_unit_price"] = int(round(unit_after))
+        out_it["effective_pct"]        = eff_pct
+        items_effective.append(out_it)
+
+    # Optional cart-wide guard (kept as a safety): allow dropping global effect only.
+    # Since we already guarded per-item above, grand_total should usually be fine.
+    if grand_total < (bought_total + _GUARD_PAD):
+        # Roll back ONLY the global part: recompute with per-row only
+        subtotal = 0.0
+        grand_total = 0.0
+        discount_amt_total = 0.0
+        items_effective2 = []
         for it in items:
-            unit_sell   = float(it.get("price", 0))
+            qty         = int(it.get("qty", 1))
+            unit_price  = float(it.get("price", 0))
             unit_bought = float(it.get("bought_price", 0))
-            unit_after  = unit_sell * (1 - pct/100.0)
-            if unit_after < (unit_bought + 100):
-                # match your front-end message style; API can map this to a friendly error
-                raise ValueError("max_discount_reached_item")
+            row_pct     = float(it.get("disc_pct") or 0.0)  # ignore global now
+            eff_pct     = row_pct if row_pct > 0 else 0.0
+            unit_after  = unit_price * (1.0 - eff_pct/100.0)
 
-        discount_amt = subtotal * (pct / 100.0)
-    elif di:
-        # If you ever support flat, keep old behavior but note it won't meet per-item rule
-        flat = float(di)
-        discount_amt = min(flat, subtotal)
+            # keep per-item guard
+            if eff_pct > 0 and unit_after < (unit_bought + _GUARD_PAD):
+                brand = it.get("brand") or ""
+                cat   = it.get("category") or ""
+                size  = it.get("size") or ""
+                raise ValueError(f"max_discount_item:{brand}/{cat}/{size}")
 
-    grand_total = max(0.0, subtotal - discount_amt)
+            line_sub   = unit_price * qty
+            line_total = unit_after * qty
+            line_disc  = line_sub - line_total
 
-    # (Optional) keep the old cart-wide guard as a second safety net
-    if di and grand_total < (bought_total + 100):
-        raise ValueError("max_discount_reached")
+            subtotal           += line_sub
+            grand_total        += line_total
+            discount_amt_total += line_disc
 
-    gst = 0
+            out_it = dict(it)
+            out_it["effective_unit_price"] = int(round(unit_after))
+            out_it["effective_pct"]        = eff_pct
+            items_effective2.append(out_it)
 
+        items_effective = items_effective2
+
+    gst = 0.0
     return {
         "subtotal": round(subtotal, 2),
-        "discount_amt": round(discount_amt, 2),
+        "discount_amt": round(discount_amt_total, 2),  # this is the SAVED amount
         "grand_total": round(grand_total, 2),
         "gst": round(gst, 2),
+        "items_effective": items_effective,
     }
+
+
+
 
 
 
@@ -276,126 +360,94 @@ def generate_invoice_text(
         gst_amount,
         grand_total,
         discount_amt,
-        show_time: bool = True,   # << control time on/off in Date
+        show_time: bool = True,
     ):
-        # Narrow total width so 3" printers don't clip the right edge
-        COLS = 38  # safe on most 3"
+    COLS = 38
+    W_NO, W_BR, W_SZ, W_Q, W_MRP, W_PRC = 2, 8, 4, 3, 6, 10
 
-        # Tweaked widths for better alignment on thermal printers
-        # Sum with spaces must stay within COLS
-        W_NO   = 2   # "No"
-        W_BR   = 8   # reduced to leave space for price "(orig)after"
-        W_SZ   = 4   # "Size"
-        W_Q    = 3   # "Qty"
-        W_MRP  = 6   # "MRP"
-        W_PRC  = 10  # "Price" wide enough for "(2599)999"
+    def clamp(s, n): return (str(s)[:n]).ljust(n)
 
-        def clamp(s, n): return (str(s)[:n]).ljust(n)
+    lines = []
+    header = ["DRIP", "#6-2-52,", "DL Road, Hindupur,", "Satya Sai (D), AP-515201", "Phone: 8106204688"]
+    for s in header:
+        lines.append(s.center(COLS))
+    lines.append("-" * COLS)
 
-        lines = []
+    today_str = india_date_str(include_time=show_time)
+    left  = f"Invoice: {invoice_id}"
+    right = f"Date: {today_str}"
+    lines.append(f"{left:<{COLS - len(right)}}{right}")
 
-        # Header (centered)
-        header = [
-            "DRIP",
-            "#6-2-52,",
-            "D L Road, Hindupur,",
-            "Satya Sai (D), AP-515201",
-            "Phone: 8106204688"
-        ]
-        for s in header:
-            lines.append(s.center(COLS))
-        lines.append("-" * COLS)
+    cust_line = f"Customer: {customer_name} / {customer_phone}"
+    lines.append(clamp(cust_line, COLS))
+    lines.append("-" * COLS)
 
-        # Left/Right info line
-        today_str = india_date_str(include_time=show_time)
-        left  = f"Invoice: {invoice_id}"
-        right = f"Date: {today_str}"
-        lines.append(f"{left:<{COLS - len(right)}}{right}")
+    hdr = (
+        f"{'No':<{W_NO}} "
+        f"{'Brand':<{W_BR}} "
+        f"{'Size':<{W_SZ}} "
+        f"{'Qty':>{W_Q}} "
+        f"{'MRP':>{W_MRP}} "
+        f"{'Price':>{W_PRC}}"
+    )
+    lines.append(hdr)
+    lines.append("-" * COLS)
 
-        # Customer line
-        cust_line = f"Customer: {customer_name} / {customer_phone}"
-        lines.append(clamp(cust_line, COLS))
-        lines.append("-" * COLS)
+    # Render each row: if an effective price exists and differs, show (orig)after
+    for idx, item in enumerate(items, start=1):
+        brand = clamp(item.get("brand", ""), W_BR)
+        size  = clamp(item.get("size", ""), W_SZ)
+        qty   = int(item.get("qty", 1))
+        mrp   = int(float(item.get("mrp_price", 0)))
+        price_orig = int(float(item.get("price", 0)))
 
-        # Column header
-        header = (
-            f"{'No':<{W_NO}} "
-            f"{'Brand':<{W_BR}} "
-            f"{'Size':<{W_SZ}} "
-            f"{'Qty':>{W_Q}} "
-            f"{'MRP':>{W_MRP}} "
-            f"{'Price':>{W_PRC}}"
+        eff_unit = item.get("effective_unit_price")
+        if eff_unit is None:
+            # fallback: try to compute from effective_pct if present
+            eff_pct = float(item.get("effective_pct") or 0.0)
+            eff_unit = int(round(price_orig * (1 - eff_pct/100.0))) if eff_pct > 0 else price_orig
+        eff_unit = int(eff_unit)
+
+        if eff_unit != price_orig:
+            price_str = f"({price_orig}){eff_unit}"
+        else:
+            price_str = f"{price_orig}"
+
+        row = (
+            f"{idx:<{W_NO}} "
+            f"{brand:<{W_BR}} "
+            f"{size:<{W_SZ}} "
+            f"{qty:<{W_Q}} "
+            f"{mrp:>{W_MRP}} "
+            f"{price_str:>{W_PRC}}"
         )
-        lines.append(header)
-        lines.append("-" * COLS)
+        lines.append(row)
 
-        # --- FIX: define eff_pct_num safely before using it
-        eff_pct_num = 0
-        try:
-            if float(subtotal or 0) > 0 and float(discount_amt or 0) > 0:
-                eff = (float(discount_amt) / float(subtotal)) * 100.0
-                eff_pct_num = int(round(eff))
-        except Exception:
-            eff_pct_num = 0
+    lines.append("-" * COLS)
+    LBL_W = 18
 
-        # Item rows
-        for idx, item in enumerate(items, start=1):
-            brand = clamp(item.get("brand", ""), W_BR)
-            size  = clamp(item.get("size", ""), W_SZ)
-            qty   = int(item.get("qty", 1))
-            mrp   = int(float(item.get("mrp_price", 0)))
-            price_orig = int(float(item.get("price", 0)))
+    # Show “Saved” (₹) instead of “Discount (%)”
+    saved_amt = float(discount_amt or 0)
+    if saved_amt > 0:
+        label = "Saved"
+        lines.append(f"{clamp(label, LBL_W)}{('-' + format(saved_amt, '.2f')).rjust(COLS - LBL_W)}")
 
-            # Show (orig)after if discount percent is applied; else show orig only
-            if eff_pct_num > 0:
-                price_after = int(round(price_orig * (1 - eff_pct_num/100.0)))
-                price_str = f"({price_orig}){price_after}"
-            else:
-                price_str = f"{price_orig}"
+    total_label = "Total"
+    lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
+    lines.append("-" * COLS)
+    lines.append("Thank you for shopping with DRIP!".center(COLS))
+    lines.append(" " * COLS)
 
-            row = (
-                f"{idx:<{W_NO}} "
-                f"{brand:<{W_BR}} "
-                f"{size:<{W_SZ}} "
-                f"{qty:<{W_Q}} "
-                f"{mrp:>{W_MRP}} "
-                f"{price_str:>{W_PRC}}"
-            )
-            lines.append(row)
+    MARGIN = 2
+    lines = [(" " * MARGIN) + line for line in lines]
+    return "\n".join(lines)
 
-        lines.append("-" * COLS)
-        LBL_W = 18
-
-        # Effective discount % text for summary line (optional)
-        disc_pct_text = ""
-        try:
-            if float(subtotal or 0) > 0 and float(discount_amt or 0) > 0:
-                eff = (float(discount_amt) / float(subtotal)) * 100.0
-                disc_pct_text = f" ({int(round(eff))}%)" if abs(eff - round(eff)) < 0.01 else f" ({eff:.1f}%)"
-        except Exception:
-            pass
-
-        if float(discount_amt or 0) > 0:
-            label = f"Discount{disc_pct_text}"
-            lines.append(f"{clamp(label, LBL_W)}{('-' + format(discount_amt, '.2f')).rjust(COLS - LBL_W)}")
-
-        total_label = "Total"
-        lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
-        lines.append("-" * COLS)
-        lines.append("Thank you for shopping with DRIP!".center(COLS))
-        lines.append(" " * COLS)
-
-        # Left margin for printers
-        MARGIN = 2
-        lines = [(" " * MARGIN) + line for line in lines]
-        return "\n".join(lines)
 
 
 
 # ---------------------------------
 # Persistence
 # ---------------------------------
-
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
@@ -452,9 +504,6 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn.commit()
     cur.close()
     conn.close()
-
-
-
 
 
 # ---------------------------------

@@ -71,6 +71,17 @@
   .sp-input::-webkit-outer-spin-button,
   .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .sp-input[type=number] { -moz-appearance: textfield; }
+
+  .disc-input{
+    width: 4.5ch;
+    max-width: 4.5ch;
+    min-width: 4.5ch;
+    text-align: right;
+    padding: 2px 4px;
+  }
+  .disc-input::-webkit-outer-spin-button,
+  .disc-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .disc-input[type=number] { -moz-appearance: textfield; }
 </style>
 
 <!-- Search modal -->
@@ -101,6 +112,7 @@
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
         <th style="text-align:right;">Price</th>
+        <th style="text-align:right;">Disc</th> 
         <th style="text-align:center;"></th>
       </tr>
     </thead>
@@ -229,6 +241,9 @@ function sameKey(a,b){
   return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
 }
 function upsertCartItem(newItem){
+  // ensure per-row discount key exists and persists
+  if (typeof newItem.disc_pct !== 'number') newItem.disc_pct = 0;
+
   const i = cart.findIndex(it => sameKey(it, newItem));
   if (i >= 0) {
     cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
@@ -260,64 +275,117 @@ function invalidateCheckout() {
   btn.textContent = 'Proceed';
 }
 
-/* =========
-   Totals
-   ========= */
-function recalc() {
-  subtotal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
-  const boughtTotal = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
-  document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
-  let discountAmt = 0;
-  if (appliedDiscount) {
-    if (/%\s*$/.test(appliedDiscount)) {
-      const pct = parseFloat(appliedDiscount);
-      if (!isNaN(pct) && pct >= 0) discountAmt = subtotal * (pct/100.0);
-    } else {
-      const flat = parseFloat(appliedDiscount);
-      if (!isNaN(flat) && flat >= 0) discountAmt = Math.min(flat, subtotal);
-    }
-    const finalCandidate = subtotal - discountAmt;
-    if (finalCandidate < (boughtTotal + 100)) {
-      discountAmt = 0;
-    }
-  }
-  finalTotal = Math.max(0, subtotal - discountAmt);
-  document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
-}
-
-/* =================
-   Cart rendering
-   ================= */
-function getDiscountPct() {
+function globalPct(){
   if (!appliedDiscount) return 0;
   if (/%\s*$/.test(appliedDiscount)) {
     const pct = parseFloat(appliedDiscount);
     return isNaN(pct) ? 0 : Math.max(0, pct);
   }
-  // if you ever allow flat amounts later, return 0 here to avoid double-counting
-  return 0;
+  return 0; // flat not used here
+}
+function effectivePctFor(item){
+  const rowPct = Number(item.disc_pct||0);
+  return rowPct > 0 ? rowPct : globalPct();
 }
 
+/* =========
+   Totals
+   ========= */
+function recalc() {
+  // Global percent (like "10%") – only applies to rows WITHOUT per-row discount
+  let globalPct = 0;
+  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
+    const p = parseFloat(appliedDiscount);
+    globalPct = isNaN(p) ? 0 : Math.max(0, p);
+  }
+
+  let subtotalBase = 0;        // base SP * qty (shown as "Total")
+  let subtotalAfterRows = 0;   // after applying per-row discounts
+  let eligibleForGlobal = 0;   // only rows with no per-row discount
+  let boughtTotal = 0;         // guard baseline
+
+  for (const it of cart) {
+    const qty        = Number(it.qty || 0);
+    const unitSell   = Number(it.price || 0);
+    const unitBought = Number(it.bought_price || 0);
+    const rowPct     = Number(it.disc_pct || 0);
+
+    subtotalBase += unitSell * qty;
+    boughtTotal  += unitBought * qty;
+
+    let unitAfterRows = unitSell;
+    if (rowPct > 0) {
+      unitAfterRows = unitSell * (1 - rowPct/100);
+    } else {
+      eligibleForGlobal += unitSell * qty;
+    }
+
+    subtotalAfterRows += unitAfterRows * qty;
+  }
+
+  // apply global to the eligible portion only
+  let globalDiscAmt = 0;
+  if (globalPct > 0) {
+    globalDiscAmt = eligibleForGlobal * (globalPct/100);
+  }
+
+  const finalCandidate = subtotalAfterRows - globalDiscAmt;
+
+  // Guard: do not allow below bought + 100 (drop ONLY global if violated)
+  let finalTotalLocal = finalCandidate;
+  if (finalCandidate < (boughtTotal + 100)) {
+    globalDiscAmt = 0;
+    finalTotalLocal = subtotalAfterRows;
+  }
+
+  subtotal   = subtotalBase;
+  finalTotal = Math.max(0, finalTotalLocal);
+
+  document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
+  document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
+}
+
+
+
+/* =================
+   Cart rendering
+   ================= */
 function renderCart() {
-  const tb = document.querySelector('#cartTable tbody'); tb.innerHTML = '';
-  const pct = getDiscountPct();
+  const tb = document.querySelector('#cartTable tbody');
+  tb.innerHTML = '';
+
+  // global fallback
+  let globalPct = 0;
+  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
+    const p = parseFloat(appliedDiscount);
+    globalPct = isNaN(p) ? 0 : Math.max(0, p);
+  }
 
   cart.forEach((it, idx) => {
-    const orig = Number(it.price || 0);
-    const disc = pct ? Math.round(orig * (1 - pct/100)) : orig;
+    const base   = Number(it.price || 0);
+    const rowPct = Number(it.disc_pct || 0);
+    const effPct = rowPct > 0 ? rowPct : globalPct;
+    const after  = effPct ? Math.round(base * (1 - effPct/100)) : base;
 
-    // What to show to the user
-    const displayText = pct ? `(${parseInt(orig,10)})${parseInt(disc,10)}` : `${parseInt(orig,10)}`;
+    const displayText = effPct
+      ? `(${parseInt(base,10)})${parseInt(after,10)}`
+      : `${parseInt(base,10)}`;
 
-    const priceCell = IS_ADMIN
-      // Admin: keep the editable input for base price; also show computed discounted price beside it
-      ? `<div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-           <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-                  inputmode="numeric" pattern="\\d*" value="${parseInt(orig,10)}">
-           <span style="opacity:.7;">${pct ? `(${parseInt(orig,10)})${parseInt(disc,10)}` : ''}</span>
-         </div>`
-      // Non-admin: just show the formatted price (with discount if any)
-      : `<span>${displayText}</span>`;
+    const priceCell = `
+      <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
+        ${IS_ADMIN
+          ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+                    inputmode="numeric" pattern="\\d*" value="${parseInt(base,10)}">`
+          : ''}
+        <span>${displayText}</span>
+      </div>`;
+
+    const discCell =
+      `<div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
+         <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
+                inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
+         <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
+       </div>`;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -331,9 +399,8 @@ function renderCart() {
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
       <td style="text-align:right;">${priceCell}</td>
-      <td style="text-align:center;">
-        <button type="button" data-act="remove" data-i="${idx}">x</button>
-      </td>
+      <td style="text-align:right;">${discCell}</td>
+      
     `;
     tb.appendChild(tr);
   });
@@ -344,13 +411,12 @@ function renderCart() {
 }
 
 
-
-// Block price edits for non-admins
+// Qty & remove controls (unchanged)
 document.querySelector('#cartTable').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
 
-  e.preventDefault();   // stop any form submission
+  e.preventDefault();
   e.stopPropagation();
 
   const act = btn.getAttribute('data-act');
@@ -362,26 +428,86 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   if (act === 'remove'){ cart.splice(i, 1); renderCart(); }
 });
 
-document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!e.target.classList.contains('sp-input')) return;
-  const i = +e.target.getAttribute('data-i');
+// Click "Apply" sets per-row discount with guard
+document.querySelector('#cartTable').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button.disc-apply');
+  if (!btn) return;
+  const i = +btn.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
-  const v = parseFloat(e.target.value);
-  if (isNaN(v) || v < 0) {
-    e.target.value = Number(cart[i].price||0).toFixed(2);
+
+  const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
+  const v = parseFloat((input && input.value) || '0');
+  const pct = isNaN(v) || v < 0 ? 0 : v;
+
+  // per-item guard
+  const unitSell   = Number(cart[i].price || 0);
+  const unitBought = Number(cart[i].bought_price || 0);
+  const unitAfter  = unitSell * (1 - pct/100);
+  if (pct > 0 && unitAfter < (unitBought + 150)) {
+    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
     return;
   }
-  cart[i].price = v;
+
+  cart[i].disc_pct = pct; // 0 clears this row's discount
   renderCart();
 });
 
+// Tidy & live-apply on change
+document.querySelector('#cartTable').addEventListener('change', (e)=>{
+  if (!e.target.classList.contains('disc-input')) return;
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+  const v = parseFloat(e.target.value);
+  const pct = (isNaN(v) || v < 0) ? 0 : v;
+  e.target.value = pct;
+  cart[i].disc_pct = pct;
+  renderCart();
+});
+
+
+
 /* =================
-   Discount controls
+   Per-row discount
+   ================= */
+document.querySelector('#cartTable').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button.disc-apply');
+  if (!btn) return;
+  const i = +btn.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+
+  const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
+  const v = parseFloat((input && input.value) || '0');
+  const pct = isNaN(v) || v < 0 ? 0 : v;
+
+  // Per-item guard: discounted UNIT price must be >= bought + 150
+  const unitSell   = Number(cart[i].price || 0);
+  const unitBought = Number(cart[i].bought_price || 0);
+  const unitAfter  = unitSell * (1 - pct/100);
+  if (pct > 0 && unitAfter < (unitBought + 150)) {
+    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
+    return;
+  }
+
+  cart[i].disc_pct = pct; // 0 clears this row's discount
+  renderCart();
+});
+
+// keep input tidy
+document.querySelector('#cartTable').addEventListener('change', (e)=>{
+  if (!e.target.classList.contains('disc-input')) return;
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+  const v = parseFloat(e.target.value);
+  e.target.value = isNaN(v) || v < 0 ? 0 : v;
+});
+
+/* =================
+   Global Discount button
    ================= */
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
 
-  // clear discount
+  // clear global discount
   if (!raw){
     appliedDiscount = "";
     renderCart();
@@ -395,23 +521,18 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
 
-  // ✅ Per-item guard: discounted UNIT price must be >= (bought_price + 100)
+  // ✅ Per-item guard for ALL rows that don't already have per-row discount
   for (const it of cart) {
+    const rowPct = Number(it.disc_pct||0);
+    const usePct = rowPct > 0 ? rowPct : pct;
     const unitSell   = Number(it.price || 0);
     const unitBought = Number(it.bought_price || 0);
-    const unitAfter  = unitSell * (1 - pct/100);
-    if (unitAfter < (unitBought + 150)) {
+    const unitAfter  = unitSell * (1 - usePct/100);
+    if (usePct > 0 && unitAfter < (unitBought + 150)) {
       alert(`Maximum discount reached for ${it.brand || 'item'} (${it.category || ''} ${it.size || ''}).`);
       return;
     }
   }
-
-  // (optional) keep your old cart-wide guard too, but per-item is the key
-  const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
-  const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
-  const discountAmt   = subtotalLocal * (pct/100.0);
-  const finalCandidate = subtotalLocal - discountAmt;
-  if (finalCandidate < (boughtTotal + 150)) { alert('Maximum discount reached.'); return; }
 
   appliedDiscount = `${pct}%`;
   renderCart();
@@ -419,17 +540,15 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   persistState();
 });
 
-
 document.getElementById('discount').addEventListener('input', () => {
   const raw = (document.getElementById('discount').value || '').trim();
   if (!raw) {
     appliedDiscount = "";
-    renderCart();                // <— re-render table + totals
+    renderCart();
     invalidateCheckout();
     persistState();
   }
 });
-
 
 /* =================
    Barcode handlers
@@ -445,7 +564,8 @@ async function addBarcode() {
     });
     const j = await r.json();
     if (!j.ok) { alert('Barcode not found'); return; }
-    upsertCartItem(j.item);
+    // ensure per-row field is set on incoming item
+    upsertCartItem({ ...j.item, disc_pct: 0 });
   } catch { alert('Network error'); }
 }
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
@@ -461,7 +581,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   const size = document.getElementById('mSize').value;
   const category = document.getElementById('mCategory').value;
   if (!brand || !price) { alert('Enter brand and price'); return; }
-  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price });
+  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: 0 });
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
@@ -478,7 +598,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   j.results.forEach((it)=>{
     const row = document.createElement('div'); row.style.borderBottom='1px solid #eee'; row.style.padding='6px';
     row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${Number(it.mrp_price||0).toFixed(2)} | Price: ${Number(it.price||0).toFixed(2)} <button>Add</button>`;
-    row.querySelector('button').addEventListener('click', ()=> upsertCartItem({...it, qty:1}) );
+    row.querySelector('button').addEventListener('click', ()=> upsertCartItem({...it, qty:1, disc_pct: 0}) );
     box.appendChild(row);
   });
 });
@@ -513,14 +633,14 @@ proceedBtn.addEventListener('click', async ()=>{
       customer_name: name,
       phone,
       items: cart.map(i => ({
-  code: (i.code || ""),                          // <-- IMPORTANT
-  brand: i.brand, category: i.category, size: i.size,
-  qty: Number(i.qty||0),
-  mrp_price: Number(i.mrp_price||0),
-  bought_price: Number(i.bought_price||0),
-  price: Number(i.price||0)
-})),
-
+        code: (i.code || ""),
+        brand: i.brand, category: i.category, size: i.size,
+        qty: Number(i.qty||0),
+        mrp_price: Number(i.mrp_price||0),
+        bought_price: Number(i.bought_price||0),
+        price: Number(i.price||0),
+        disc_pct: Number(i.disc_pct||0)          // ← include per-row discount
+      })),
       discount: appliedDiscount,
       preview: true // do NOT save
     };
@@ -574,6 +694,7 @@ document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>
     alert(err.message || 'Network error'); btn.textContent = old; btn.disabled = false;
   }
 });
+
 document.getElementById('btnClear').addEventListener('click', ()=>{
   // reset discount UI/state
   appliedDiscount = "";

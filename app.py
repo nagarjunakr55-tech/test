@@ -290,12 +290,13 @@ def create_app() -> Flask:
                 return render_template("billing.html", error="Enter valid 10-digit phone"), 400
 
             totals = calculate_totals(items, discount_input)
+            items_for_receipt = totals.get("items_effective", items)  # <-- use effective items
             invoice_id = generate_unique_invoice_id()
             invoice_text = generate_invoice_text(
                 invoice_id=invoice_id,
                 customer_name=name,
                 customer_phone=phone,
-                items=items,
+                items=items_for_receipt,                            # <-- changed
                 subtotal=totals["subtotal"],
                 gst_amount=totals["gst"],
                 grand_total=totals["grand_total"],
@@ -306,13 +307,14 @@ def create_app() -> Flask:
                 invoice_id=invoice_id,
                 name=name,
                 phone=phone,
-                items=items,
+                items=items_for_receipt,                            # <-- changed
                 subtotal=totals["subtotal"],
                 discount_amt=totals["discount_amt"],
                 gst_amt=totals["gst"],
                 grand_total=totals["grand_total"],
                 invoice_text=invoice_text
             )
+
 
             return render_template("invoice.html", invoice=invoice_text, invoice_id=invoice_id)
 
@@ -450,15 +452,16 @@ def create_app() -> Flask:
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
+        items_for_receipt = totals.get("items_effective", items)
         is_preview = bool(data.get("preview"))
 
         # Preview path: DO NOT SAVE
         if is_preview:
             invoice_text = generate_invoice_text(
-                invoice_id="",   # no id on preview
+                invoice_id="",
                 customer_name=cust_name,
                 customer_phone=phone,
-                items=items,
+                items=items_for_receipt,
                 subtotal=totals["subtotal"],
                 gst_amount=totals["gst"],
                 grand_total=totals["grand_total"],
@@ -466,13 +469,14 @@ def create_app() -> Flask:
             )
             return jsonify({"ok": True, "invoice_text": invoice_text})
 
+
         # Commit path (Android Print): SAVE to DB
         invoice_id = generate_unique_invoice_id()
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id,
             customer_name=cust_name,
             customer_phone=phone,
-            items=items,
+            items=items_for_receipt,
             subtotal=totals["subtotal"],
             gst_amount=totals["gst"],
             grand_total=totals["grand_total"],
@@ -483,7 +487,7 @@ def create_app() -> Flask:
             invoice_id=invoice_id,
             name=cust_name,
             phone=phone,
-            items=items,
+            items=items_for_receipt,
             subtotal=totals["subtotal"],
             discount_amt=totals["discount_amt"],
             gst_amt=totals["gst"],
