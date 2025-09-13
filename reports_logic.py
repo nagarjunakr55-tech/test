@@ -6,6 +6,7 @@ import json
 
 from db import get_connection
 
+
 def _parse_invoice_dt(date_str: str):
     """Parse 'DD-MM-YYYY hh:mm AM/PM' or 'DD-MM-YYYY' to datetime."""
     if not date_str:

@@ -3,9 +3,12 @@
 <h3>Daily Profit</h3>
 
 <!-- Filter: pick a date (optional) -->
-<form method="get" action="{{ url_for('reports.profit_daily') }}" class="row" style="gap:8px; align-items:center; margin-bottom:10px;">
+<form method="get" action="{{ url_for('reports.profit_daily') }}" 
+      class="row" style="gap:8px; align-items:center; margin-bottom:10px;">
   <label for="date" class="nowrap">Select Date</label>
-  <input type="date" id="date" name="date" value="{{ selected_date_iso or '' }}">
+  <input type="date" id="date" name="date"
+         value="{{ selected_date_iso or '' }}"
+         style="width: 170px; min-width: 120px; text-align:center;">
   <button type="submit">Show</button>
   <a href="{{ url_for('reports.profit_daily') }}" class="btn-link">Clear</a>
 </form>
