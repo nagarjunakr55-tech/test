@@ -2,16 +2,15 @@
 {% block content %}
 <h3>Daily Profit</h3>
 
-<form method="get" action="{{ url_for('reports.profit_daily') }}" 
+<form method="get" action="{{ url_for('reports.profit_daily') }}"
       class="row" style="gap:8px; align-items:center; margin-bottom:10px;">
   <label for="date" class="nowrap">Select Date</label>
   <input type="date" id="date" name="date"
          value="{{ selected_date_iso or '' }}"
-         style="width: 170px; min-width: 120px; text-align:center;">
+         style="width: 140px; min-width: 120px; text-align:center;">
   <button type="submit">Show</button>
   <a href="{{ url_for('reports.profit_daily') }}" class="btn-link">Clear</a>
 </form>
-
 
 <div class="table-responsive">
   <table>
@@ -21,6 +20,7 @@
         <th>Invoices</th>
         <th>Spent</th>
         <th>Profit</th>
+        <th>Total</th> <!-- NEW -->
       </tr>
     </thead>
     <tbody>
@@ -30,12 +30,13 @@
           <td>{{ r.label }}</td>
           <td>{{ r.invoices }}</td>
           <td>₹{{ '%.2f'|format(r.spent) }}</td>
-          <td><strong>₹{{ '%.2f'|format(r.profit) }}</strong></td>
+          <td>₹{{ '%.2f'|format(r.profit) }}</td>
+          <td><strong>₹{{ '%.2f'|format(r.total) }}</strong></td> <!-- NEW -->
         </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="4" style="text-align:center; opacity:0.7;">
+          <td colspan="5" style="text-align:center; opacity:0.7;">
             No records found{% if selected_date_iso %} for {{ selected_date_iso }}{% endif %}
           </td>
         </tr>
@@ -47,8 +48,14 @@
         <th>{{ totals.invoices }}</th>
         <th>₹{{ '%.2f'|format(totals.spent) }}</th>
         <th>₹{{ '%.2f'|format(totals.profit) }}</th>
+        <th><strong>₹{{ '%.2f'|format(totals.total) }}</strong></th> <!-- NEW -->
       </tr>
     </tfoot>
   </table>
+</div>
+
+<!-- Optional quick link back to monthly report -->
+<div style="margin-top:10px;">
+  <a href="{{ url_for('reports.profit') }}" class="btn-link">View Monthly Profit</a>
 </div>
 {% endblock %}
