@@ -302,13 +302,15 @@ function renderCart() {
       <td>${it.category||''}</td>
       <td>${it.size||''}</td>
       <td>
-        <button data-act="minus" data-i="${idx}">-</button>
+        <button type="button" data-act="minus" data-i="${idx}">-</button>
         <span style="display:inline-block; width:28px; text-align:center;">${it.qty}</span>
-        <button data-act="plus" data-i="${idx}">+</button>
+        <button type="button" data-act="plus" data-i="${idx}">+</button>
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
       <td style="text-align:right;">${priceCell}</td>
-      <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
+      <td style="text-align:center;">
+        <button type="button" data-act="remove" data-i="${idx}">x</button>
+      </td>
     `;
     tb.appendChild(tr);
   });
@@ -317,20 +319,24 @@ function renderCart() {
   persistState();
 }
 
+
 // Block price edits for non-admins
-document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!IS_ADMIN) return;
-  if (!e.target.classList.contains('sp-input')) return;
-  const i = +e.target.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
-  const v = parseFloat(e.target.value);
-  if (isNaN(v) || v < 0) {
-    e.target.value = Number(cart[i].price||0).toFixed(2);
-    return;
-  }
-  cart[i].price = v;
-  renderCart();
+document.querySelector('#cartTable').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+
+  e.preventDefault();   // stop any form submission
+  e.stopPropagation();
+
+  const act = btn.getAttribute('data-act');
+  const i = +btn.getAttribute('data-i');
+  if (Number.isNaN(i) || !cart[i]) return;
+
+  if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty) - 1); if (cart[i].qty === 0) cart.splice(i, 1); renderCart(); }
+  if (act === 'plus')  { cart[i].qty = Number(cart[i].qty) + 1; renderCart(); }
+  if (act === 'remove'){ cart.splice(i, 1); renderCart(); }
 });
+
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('sp-input')) return;
   const i = +e.target.getAttribute('data-i');
