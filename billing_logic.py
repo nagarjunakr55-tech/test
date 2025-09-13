@@ -209,11 +209,6 @@ _ALLOWED_PCTS = {5, 10, 15, 20, 25, 30,35}
 
 
 def calculate_totals(items, discount_input: str):
-    """
-    items: [{price, qty, bought_price, ...}]
-    discount_input: "20%" or "20" (plain number = percent)
-    MAX rule: (subtotal - discount) must be >= (bought_total + 100) else reject.
-    """
     if not items:
         raise ValueError("empty_cart")
 
@@ -223,27 +218,41 @@ def calculate_totals(items, discount_input: str):
     di = (discount_input or "").strip()
     discount_amt = 0.0
 
-    if di:
-        try:
-            if di.endswith("%"):
-                pct = float(di[:-1])
-                discount_amt = subtotal * (pct / 100.0)
-            elif di.replace(".", "", 1).isdigit():
-                pct = float(di)  # plain number -> percent
-                discount_amt = subtotal * (pct / 100.0)
-            else:
-                flat = float(di)  # treat as flat
-                discount_amt = min(flat, subtotal)
-        except Exception:
-            raise ValueError("invalid_discount")
+    # parse percent; your UI only uses percent codes
+    def _parse_percent(di_: str):
+        if not di_:
+            return None
+        if di_.endswith("%"):
+            return float(di_[:-1])
+        # treat plain number as percent too, like before
+        if di_.replace(".", "", 1).isdigit():
+            return float(di_)
+        return None
 
-        grand_total = max(0.0, subtotal - discount_amt)
-        if grand_total < (bought_total + 100):
-            raise ValueError("max_discount_reached")
-    else:
-        grand_total = subtotal
+    pct = _parse_percent(di)
 
-    #gst = grand_total - (grand_total / 1.05)
+    if pct is not None:
+        # ✅ Per-item unit guard
+        for it in items:
+            unit_sell   = float(it.get("price", 0))
+            unit_bought = float(it.get("bought_price", 0))
+            unit_after  = unit_sell * (1 - pct/100.0)
+            if unit_after < (unit_bought + 100):
+                # match your front-end message style; API can map this to a friendly error
+                raise ValueError("max_discount_reached_item")
+
+        discount_amt = subtotal * (pct / 100.0)
+    elif di:
+        # If you ever support flat, keep old behavior but note it won't meet per-item rule
+        flat = float(di)
+        discount_amt = min(flat, subtotal)
+
+    grand_total = max(0.0, subtotal - discount_amt)
+
+    # (Optional) keep the old cart-wide guard as a second safety net
+    if di and grand_total < (bought_total + 100):
+        raise ValueError("max_discount_reached")
+
     gst = 0
 
     return {
@@ -252,6 +261,7 @@ def calculate_totals(items, discount_input: str):
         "grand_total": round(grand_total, 2),
         "gst": round(gst, 2),
     }
+
 
 
 # ---------------------------------

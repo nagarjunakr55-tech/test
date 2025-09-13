@@ -381,31 +381,44 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
 
-  // Clear discount
+  // clear discount
   if (!raw){
     appliedDiscount = "";
-    renderCart();                // <— re-render table + totals
+    renderCart();
     invalidateCheckout();
     persistState();
     return;
   }
 
-  // Percent only (your current rule)
+  // percent only (your rule)
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
 
+  // ✅ Per-item guard: discounted UNIT price must be >= (bought_price + 100)
+  for (const it of cart) {
+    const unitSell   = Number(it.price || 0);
+    const unitBought = Number(it.bought_price || 0);
+    const unitAfter  = unitSell * (1 - pct/100);
+    if (unitAfter < (unitBought + 150)) {
+      alert(`Maximum discount reached for ${it.brand || 'item'} (${it.category || ''} ${it.size || ''}).`);
+      return;
+    }
+  }
+
+  // (optional) keep your old cart-wide guard too, but per-item is the key
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
-  if (finalCandidate < (boughtTotal + 100)) { alert('Maximum discount reached.'); return; }
+  if (finalCandidate < (boughtTotal + 150)) { alert('Maximum discount reached.'); return; }
 
   appliedDiscount = `${pct}%`;
-  renderCart();                  // <— re-render table + totals
+  renderCart();
   invalidateCheckout();
   persistState();
 });
+
 
 document.getElementById('discount').addEventListener('input', () => {
   const raw = (document.getElementById('discount').value || '').trim();
