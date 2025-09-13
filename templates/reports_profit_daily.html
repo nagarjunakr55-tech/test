@@ -7,7 +7,7 @@
   <label for="date" class="nowrap">Select Date</label>
   <input type="date" id="date" name="date"
          value="{{ selected_date_iso or '' }}"
-         style="width: 140px; min-width: 120px; text-align:center;">
+         style="width: 180px; min-width: 120px; text-align:center;">
   <button type="submit">Show</button>
   <a href="{{ url_for('reports.profit_daily') }}" class="btn-link">Clear</a>
 </form>
