@@ -258,110 +258,136 @@ def calculate_totals(items, discount_input: str):
 # Invoice text (monospace)
 # ---------------------------------
 def generate_invoice_text(
-    invoice_id,
-    customer_name,
-    customer_phone,
-    items,
-    subtotal,
-    gst_amount,
-    grand_total,
-    discount_amt,
-    show_time: bool = True,   # << NEW: control time on/off in Date
-):
-    # Narrow total width so 3" printers don't clip the right edge
-    COLS = 38  # safe on most 3"
+        invoice_id,
+        customer_name,
+        customer_phone,
+        items,
+        subtotal,
+        gst_amount,
+        grand_total,
+        discount_amt,
+        show_time: bool = True,   # << control time on/off in Date
+    ):
+        # Narrow total width so 3" printers don't clip the right edge
+        COLS = 38  # safe on most 3"
 
-    # Tweaked widths for better alignment on thermal printers
-    # Sum with spaces must stay within COLS
-    W_NO   = 2   # "No"
-    W_BR   = 12  # "Brand"
-    W_SZ   = 4   # "Size" (wider to match header)
-    W_Q    = 3   # "Qty"  (wider to match header)
-    W_MRP  = 6   # "MRP"  (numeric, right-aligned)
-    W_PRC  = 6   # "Price"(numeric, right-aligned)
+        # Tweaked widths for better alignment on thermal printers
+        # Sum with spaces must stay within COLS
+        W_NO   = 2   # "No"
+        W_BR   = 8   # reduced to leave space for price "(orig)after"
+        W_SZ   = 4   # "Size"
+        W_Q    = 3   # "Qty"
+        W_MRP  = 6   # "MRP"
+        W_PRC  = 10  # "Price" wide enough for "(2599)999"
 
-    def clamp(s, n): return (str(s)[:n]).ljust(n)
+        def clamp(s, n): return (str(s)[:n]).ljust(n)
 
-    lines = []
+        lines = []
 
-    # Header (centered)
-    header = [
-        "DRIP",
-        "#6-2-52,",
-        "D L Road, Hindupur,",
-        "Satya Sai (D), AP-515201",
-        "Phone: 8106204688"
-    ]
-    for s in header:
-        lines.append(s.center(COLS))
-    lines.append("-" * COLS)
+        # Header (centered)
+        header = [
+            "DRIP",
+            "#6-2-52,",
+            "D L Road, Hindupur,",
+            "Satya Sai (D), AP-515201",
+            "Phone: 8106204688"
+        ]
+        for s in header:
+            lines.append(s.center(COLS))
+        lines.append("-" * COLS)
 
-    # Left/Right info line
-    today_str = india_date_str(include_time=show_time)
-    left  = f"Invoice: {invoice_id}"
-    right = f"Date: {today_str}"
-    lines.append(f"{left:<{COLS - len(right)}}{right}")
+        # Left/Right info line
+        today_str = india_date_str(include_time=show_time)
+        left  = f"Invoice: {invoice_id}"
+        right = f"Date: {today_str}"
+        lines.append(f"{left:<{COLS - len(right)}}{right}")
 
-    # Customer line
-    cust_line = f"Customer: {customer_name} / {customer_phone}"
-    lines.append(clamp(cust_line, COLS))
-    lines.append("-" * COLS)
+        # Customer line
+        cust_line = f"Customer: {customer_name} / {customer_phone}"
+        lines.append(clamp(cust_line, COLS))
+        lines.append("-" * COLS)
 
-    # Column header (use the same widths/alignment as rows)
-    header = (
-        f"{'No':<{W_NO}} "
-        f"{'Brand':<{W_BR}} "
-        f"{'Size':<{W_SZ}} "
-        f"{'Qty':>{W_Q}} "
-        f"{'MRP':>{W_MRP}} "
-        f"{'Price':>{W_PRC}}"
-    )
-    lines.append(header)
-    lines.append("-" * COLS)
-
-    for idx, item in enumerate(items, start=1):
-        brand = clamp(item.get("brand", ""), W_BR)
-        size  = clamp(item.get("size", ""), W_SZ)
-        qty   = int(item.get("qty", 1))
-        mrp   = int(float(item.get("mrp_price", 0)))
-        price = int(float(item.get("price", 0)))
-        row = (
-            f"{idx:<{W_NO}} "
-            f"{brand:<{W_BR}} "
-            f"{size:<{W_SZ}} "
-            f"{qty:<{W_Q}} "
-            f"{mrp:>{W_MRP}} "
-            f"{price:>{W_PRC}}"
+        # Column header
+        header = (
+            f"{'No':<{W_NO}} "
+            f"{'Brand':<{W_BR}} "
+            f"{'Size':<{W_SZ}} "
+            f"{'Qty':>{W_Q}} "
+            f"{'MRP':>{W_MRP}} "
+            f"{'Price':>{W_PRC}}"
         )
-        lines.append(row)
+        lines.append(header)
+        lines.append("-" * COLS)
 
-    lines.append("-" * COLS)
-    LBL_W = 18
+        # --- FIX: define eff_pct_num safely before using it
+        eff_pct_num = 0
+        try:
+            if float(subtotal or 0) > 0 and float(discount_amt or 0) > 0:
+                eff = (float(discount_amt) / float(subtotal)) * 100.0
+                eff_pct_num = int(round(eff))
+        except Exception:
+            eff_pct_num = 0
 
-    # Effective discount % (derived)
-    disc_pct_text = ""
-    if subtotal and float(discount_amt) > 0:
-        eff = (float(discount_amt) / float(subtotal)) * 100.0
-        disc_pct_text = f" ({int(round(eff))}%)" if abs(eff - round(eff)) < 0.01 else f" ({eff:.1f}%)"
+        # Item rows
+        for idx, item in enumerate(items, start=1):
+            brand = clamp(item.get("brand", ""), W_BR)
+            size  = clamp(item.get("size", ""), W_SZ)
+            qty   = int(item.get("qty", 1))
+            mrp   = int(float(item.get("mrp_price", 0)))
+            price_orig = int(float(item.get("price", 0)))
 
-    if discount_amt and float(discount_amt) > 0:
-        label = f"Discount{disc_pct_text}"
-        lines.append(f"{clamp(label, LBL_W)}{('-' + format(discount_amt, '.2f')).rjust(COLS - LBL_W)}")
+            # Show (orig)after if discount percent is applied; else show orig only
+            if eff_pct_num > 0:
+                price_after = int(round(price_orig * (1 - eff_pct_num/100.0)))
+                price_str = f"({price_orig}){price_after}"
+            else:
+                price_str = f"{price_orig}"
 
-    total_label = "Total"
-    lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
-    lines.append("-" * COLS)
-    lines.append("Thank you for shopping with DRIP!".center(COLS))
-    lines.append(" " * COLS)
+            row = (
+                f"{idx:<{W_NO}} "
+                f"{brand:<{W_BR}} "
+                f"{size:<{W_SZ}} "
+                f"{qty:<{W_Q}} "
+                f"{mrp:>{W_MRP}} "
+                f"{price_str:>{W_PRC}}"
+            )
+            lines.append(row)
 
-    MARGIN = 2  # shift by 3 chars; set to 2 if you want 2
-    lines = [(" " * MARGIN) + line for line in lines]
-    return "\n".join(lines)
+        lines.append("-" * COLS)
+        LBL_W = 18
+
+        # Effective discount % text for summary line (optional)
+        disc_pct_text = ""
+        try:
+            if float(subtotal or 0) > 0 and float(discount_amt or 0) > 0:
+                eff = (float(discount_amt) / float(subtotal)) * 100.0
+                disc_pct_text = f" ({int(round(eff))}%)" if abs(eff - round(eff)) < 0.01 else f" ({eff:.1f}%)"
+        except Exception:
+            pass
+
+        if float(discount_amt or 0) > 0:
+            label = f"Discount{disc_pct_text}"
+            lines.append(f"{clamp(label, LBL_W)}{('-' + format(discount_amt, '.2f')).rjust(COLS - LBL_W)}")
+
+        total_label = "Total"
+        lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
+        lines.append("-" * COLS)
+        lines.append("Thank you for shopping with DRIP!".center(COLS))
+        lines.append(" " * COLS)
+
+        # Left margin for printers
+        MARGIN = 2
+        lines = [(" " * MARGIN) + line for line in lines]
+        return "\n".join(lines)
+
 
 
 # ---------------------------------
 # Persistence
 # ---------------------------------
+
+# ...
+
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
@@ -379,7 +405,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
             gst NUMERIC,
             grand_total NUMERIC,
             gstin TEXT,
-            date TEXT,
+            date TIMESTAMP,             -- make this TIMESTAMP
             invoice_text TEXT
         )
     """)
@@ -392,9 +418,9 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         )
     """)
 
-    date_str = india_date_str()
+    # Use a real datetime (IST) for DB
+    date_dt = ist_now()
 
-    # invoice header/body
     cur.execute("""
         INSERT INTO sales_history
         (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
@@ -402,10 +428,10 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         ON CONFLICT (invoice_id) DO NOTHING
     """, (
         invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
+        discount_amt, gst_amt, grand_total, GSTIN, date_dt, invoice_text
     ))
 
-    # record barcode sales (skip manual items without a code)
+    # ... (rest unchanged)
     for it in items:
         code = (it.get("code") or "").strip()
         qty  = int(it.get("qty") or 0)
@@ -418,6 +444,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn.commit()
     cur.close()
     conn.close()
+
 
 
 # ---------------------------------

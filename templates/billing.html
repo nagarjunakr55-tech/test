@@ -288,13 +288,36 @@ function recalc() {
 /* =================
    Cart rendering
    ================= */
+function getDiscountPct() {
+  if (!appliedDiscount) return 0;
+  if (/%\s*$/.test(appliedDiscount)) {
+    const pct = parseFloat(appliedDiscount);
+    return isNaN(pct) ? 0 : Math.max(0, pct);
+  }
+  // if you ever allow flat amounts later, return 0 here to avoid double-counting
+  return 0;
+}
+
 function renderCart() {
   const tb = document.querySelector('#cartTable tbody'); tb.innerHTML = '';
+  const pct = getDiscountPct();
+
   cart.forEach((it, idx) => {
+    const orig = Number(it.price || 0);
+    const disc = pct ? Math.round(orig * (1 - pct/100)) : orig;
+
+    // What to show to the user
+    const displayText = pct ? `(${parseInt(orig,10)})${parseInt(disc,10)}` : `${parseInt(orig,10)}`;
+
     const priceCell = IS_ADMIN
-      ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-                 inputmode="numeric" pattern="\\d*" value="${parseInt(it.price||0,10)}">`
-      : `<span>${Number(it.price||0).toFixed(2)}</span>`;
+      // Admin: keep the editable input for base price; also show computed discounted price beside it
+      ? `<div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
+           <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+                  inputmode="numeric" pattern="\\d*" value="${parseInt(orig,10)}">
+           <span style="opacity:.7;">${pct ? `(${parseInt(orig,10)})${parseInt(disc,10)}` : ''}</span>
+         </div>`
+      // Non-admin: just show the formatted price (with discount if any)
+      : `<span>${displayText}</span>`;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -314,10 +337,12 @@ function renderCart() {
     `;
     tb.appendChild(tr);
   });
+
   recalc();
   invalidateCheckout();
   persistState();
 }
+
 
 
 // Block price edits for non-admins
@@ -355,35 +380,43 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
    ================= */
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
+
+  // Clear discount
   if (!raw){
     appliedDiscount = "";
-    recalc();
+    renderCart();                // <— re-render table + totals
     invalidateCheckout();
     persistState();
     return;
   }
+
+  // Percent only (your current rule)
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
+
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
   const discountAmt   = subtotalLocal * (pct/100.0);
   const finalCandidate = subtotalLocal - discountAmt;
   if (finalCandidate < (boughtTotal + 100)) { alert('Maximum discount reached.'); return; }
+
   appliedDiscount = `${pct}%`;
-  recalc();
+  renderCart();                  // <— re-render table + totals
   invalidateCheckout();
   persistState();
 });
+
 document.getElementById('discount').addEventListener('input', () => {
   const raw = (document.getElementById('discount').value || '').trim();
   if (!raw) {
     appliedDiscount = "";
-    recalc();
+    renderCart();                // <— re-render table + totals
     invalidateCheckout();
     persistState();
   }
 });
+
 
 /* =================
    Barcode handlers
