@@ -205,7 +205,7 @@ def generate_unique_invoice_id() -> str:
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
-_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30}
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30,35}
 
 
 def calculate_totals(items, discount_input: str):

@@ -57,6 +57,7 @@
   document.getElementById('barcode').addEventListener('input', e => {
     e.target.value = e.target.value.toUpperCase();
   });
+  const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 </script>
 
 <style>
@@ -290,6 +291,11 @@ function recalc() {
 function renderCart() {
   const tb = document.querySelector('#cartTable tbody'); tb.innerHTML = '';
   cart.forEach((it, idx) => {
+    const priceCell = IS_ADMIN
+      ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+                 inputmode="numeric" pattern="\\d*" value="${parseInt(it.price||0,10)}">`
+      : `<span>${Number(it.price||0).toFixed(2)}</span>`;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${it.brand||''}</td>
@@ -301,10 +307,7 @@ function renderCart() {
         <button data-act="plus" data-i="${idx}">+</button>
       </td>
       <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
-      <td style="text-align:right;">
-        <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-               inputmode="numeric" pattern="\\d*" value="${parseInt(it.price||0,10)}">
-      </td>
+      <td style="text-align:right;">${priceCell}</td>
       <td style="text-align:center;"><button data-act="remove" data-i="${idx}">x</button></td>
     `;
     tb.appendChild(tr);
@@ -313,11 +316,20 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
-document.querySelector('#cartTable').addEventListener('click', (e)=>{
-  const btn = e.target; const act = btn.getAttribute('data-act'); const i = +btn.getAttribute('data-i');
-  if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty)-1); if(cart[i].qty===0) cart.splice(i,1); renderCart(); }
-  if (act === 'plus')  { cart[i].qty = Number(cart[i].qty)+1; renderCart(); }
-  if (act === 'remove'){ cart.splice(i,1); renderCart(); }
+
+// Block price edits for non-admins
+document.querySelector('#cartTable').addEventListener('change', (e)=>{
+  if (!IS_ADMIN) return;
+  if (!e.target.classList.contains('sp-input')) return;
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+  const v = parseFloat(e.target.value);
+  if (isNaN(v) || v < 0) {
+    e.target.value = Number(cart[i].price||0).toFixed(2);
+    return;
+  }
+  cart[i].price = v;
+  renderCart();
 });
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('sp-input')) return;
@@ -345,7 +357,7 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     return;
   }
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
-  const ALLOWED = new Set([10,15,20,25,30]);
+  const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
   const subtotalLocal = cart.reduce((s,i)=> s + Number(i.price||0)*Number(i.qty||0), 0);
   const boughtTotal   = cart.reduce((s,i)=> s + Number(i.bought_price||0)*Number(i.qty||0), 0);
