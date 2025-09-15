@@ -454,27 +454,58 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
 /* =================
    Per-row discount (Apply button)
    ================= */
-document.querySelector('#cartTable').addEventListener('click', (e)=>{
+// Allowed discount codes (same as global)
+const ALLOWED_CODES = new Set([0,10, 15, 20, 25, 30, 35]);
+
+// Per-row "Apply" works like global Discount button
+document.querySelector('#cartTable').addEventListener('click', (e) => {
   const btn = e.target.closest('button.disc-apply');
   if (!btn) return;
-  const i = +btn.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
+
+  const i = +btn.dataset.i;
+  if (Number.isNaN(i) || !cart[i]) return;
 
   const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
-  const v = parseFloat((input && input.value) || '0');
-  const pct = isNaN(v) || v < 0 ? 0 : v;
+  let raw = (input?.value || '').trim();
 
+  // Blank -> clear row discount and re-render
+  if (raw === '') {
+    cart[i].disc_pct = 0;
+    renderCart();
+    return;
+  }
+
+  // Accept "10" or "10%"
+  if (raw.endsWith('%')) raw = raw.slice(0, -1);
+  const pct = Number(raw);
+
+  // Validate against allowed codes (exact match)
+  if (!ALLOWED_CODES.has(pct)) {
+    alert('Invalid Code');
+    input.focus();
+    input.select();
+    return;
+  }
+
+  // Safety guard (same rule you use elsewhere)
   const unitSell   = Number(cart[i].price || 0);
   const unitBought = Number(cart[i].bought_price || 0);
-  const unitAfter  = unitSell * (1 - pct/100);
-  if (pct > 0 && unitAfter < (unitBought + 150)) {
+  const unitAfter  = unitSell * (1 - pct / 100);
+
+  if (unitAfter < (unitBought + 150)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
     return;
   }
 
-  cart[i].disc_pct = pct; // 0 clears this row's discount
+  // ✅ Apply per-row discount (overrides any global)
+  cart[i].disc_pct = pct;
+
+  // Optional: normalize the input box to "NN"
+  input.value = String(pct);
+
   renderCart();
 });
+
 
 /* =================
    Admin edits: after-price -> compute discount%
