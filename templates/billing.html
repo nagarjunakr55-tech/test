@@ -26,12 +26,12 @@
 
   <button id="btnBarcode"
         style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
-  Add
+    Add
   </button>
 
   <button id="btnScan" type="button"
         style="background:#9c27b0;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
-  Scan
+    Scan
   </button>
 </div>
 
@@ -43,7 +43,7 @@
       <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
     </select>
     <select id="mSize" style="min-width:90px;"></select>
-    <input id="mPrice" type="number" min="0" step="0.01" placeholder="Price" style="width:120px;">
+    <input id="mPrice" type="number" min="0" step="1" placeholder="Price" style="width:120px;">
     <input id="mQty" type="number" min="1" step="1" value="1" style="width:90px;">
   </div>
   <div class="row" style="margin-top:6px;">
@@ -68,13 +68,17 @@
     text-align: right;
     padding: 2px 4px;
   }
+
+  /* Apply is invisible but clickable */
   .disc-apply {
-  background: transparent;
-  border: none;
-  color: transparent;
-  opacity: 0;          /* fully invisible */
-  cursor: pointer;
-}
+    background: transparent;
+    border: none;
+    color: transparent;
+    opacity: 0;
+    cursor: pointer;
+    width: 40px;  /* give it some hit area */
+    height: 24px;
+  }
 
   .sp-input::-webkit-outer-spin-button,
   .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -87,6 +91,8 @@
     text-align: right;
     padding: 2px 4px;
   }
+
+  .orig-muted { opacity: .65; white-space: nowrap; }
   .disc-input::-webkit-outer-spin-button,
   .disc-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .disc-input[type=number] { -moz-appearance: textfield; }
@@ -120,7 +126,7 @@
       <col style="width:12%;">
       <col style="width:18%;">  <!-- Price -->
       <col style="width:14%;">  <!-- Disc -->
-      <col style="width:4%;">   <!-- remove btn -->
+      <col style="width:4%;">   <!-- (kept for layout balance) -->
     </colgroup>
     <thead>
       <tr style="background:#f5f5f5;">
@@ -138,10 +144,8 @@
   </table>
 </div>
 
-
 <!-- Totals + discount -->
 <div class="row" style="margin-top:10px;">
-  
   <input id="discount" class="input-sm" autocomplete="off" inputmode="numeric" pattern="\d{2}" maxlength="2" title="Enter a 2-digit number (10–99)" style="width:2.5em; max-width:40px; text-align:center; padding:6px;">
   <button id="applyDiscount"
         style="background:#2196f3;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
@@ -173,6 +177,12 @@
 <pre id="invoicePreview" style="background:#fff;"></pre>
 
 <script>
+/* =========
+   Tiny helpers
+   ========= */
+function round0(n){ return Math.round(Number(n || 0)); }
+function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
+
 /* =========================
    Scanner deep link wiring
    ========================= */
@@ -216,7 +226,7 @@ refreshSizes();
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 // Preview/save state
-let appliedDiscount = "";  // "NN%" or "NN"
+let appliedDiscount = "";  // "NN%" (only % supported in UI)
 let lastPayload = null;    // built on Proceed (preview only)
 let lastInvoiceId = null;  // set only after SAVE (Android print)
 let lastInvoiceText = "";  // preview text
@@ -253,7 +263,6 @@ function restoreState() {
 /* =========
    Helpers
    ========= */
-function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 function sameKey(a,b){
   // If either has a barcode, require same code. Different codes must not merge.
   if ((a.code || b.code) && a.code !== b.code) return false;
@@ -273,7 +282,6 @@ function upsertCartItem(newItem){
   renderCart();
 }
 function setPrintEnabled(on){
-  // If there's no btnPrint in DOM, safely no-op.
   const btn = document.getElementById('btnPrint');
   if (!btn) return;
   btn.style.pointerEvents = on ? 'auto' : 'none';
@@ -300,11 +308,7 @@ function globalPct(){
     const pct = parseFloat(appliedDiscount);
     return isNaN(pct) ? 0 : Math.max(0, pct);
   }
-  return 0; // flat not used here
-}
-function effectivePctFor(item){
-  const rowPct = Number(item.disc_pct||0);
-  return rowPct > 0 ? rowPct : globalPct();
+  return 0;
 }
 
 /* =========
@@ -312,10 +316,10 @@ function effectivePctFor(item){
    ========= */
 function recalc() {
   // Global percent (like "10%") – only applies to rows WITHOUT per-row discount
-  let globalPct = 0;
+  let gPct = 0;
   if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
     const p = parseFloat(appliedDiscount);
-    globalPct = isNaN(p) ? 0 : Math.max(0, p);
+    gPct = isNaN(p) ? 0 : Math.max(0, p);
   }
 
   let subtotalBase = 0;        // base SP * qty (shown as "Total")
@@ -344,8 +348,8 @@ function recalc() {
 
   // apply global to the eligible portion only
   let globalDiscAmt = 0;
-  if (globalPct > 0) {
-    globalDiscAmt = eligibleForGlobal * (globalPct/100);
+  if (gPct > 0) {
+    globalDiscAmt = eligibleForGlobal * (gPct/100);
   }
 
   const finalCandidate = subtotalAfterRows - globalDiscAmt;
@@ -364,8 +368,6 @@ function recalc() {
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
 }
 
-
-
 /* =================
    Cart rendering
    ================= */
@@ -374,34 +376,34 @@ function renderCart() {
   tb.innerHTML = '';
 
   // global fallback
-  let globalPct = 0;
+  let gPct = 0;
   if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
     const p = parseFloat(appliedDiscount);
-    globalPct = isNaN(p) ? 0 : Math.max(0, p);
+    gPct = isNaN(p) ? 0 : Math.max(0, p);
   }
 
   cart.forEach((it, idx) => {
     const base   = Number(it.price || 0);
     const rowPct = Number(it.disc_pct || 0);
-    const effPct = rowPct > 0 ? rowPct : globalPct;
-    const after  = effPct ? Math.round(base * (1 - effPct/100)) : base;
+    const effPct = rowPct > 0 ? rowPct : gPct;
 
-    const displayText = effPct
-      ? `(${parseInt(base,10)})${parseInt(after,10)}`
-      : `${parseInt(base,10)}`;
+    // Rounded display values
+    const baseR  = round0(base);
+    const afterR = effPct ? round0(base * (1 - effPct/100)) : baseR;
 
-    const priceCell = `
-  <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
-    ${IS_ADMIN
-      ? `<input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-                inputmode="numeric" pattern="\\d*" value="${after.toFixed(2)}">`
-      : ''}
-    <span>${displayText}</span>
-  </div>`;
+    const displayText = effPct ? `(${baseR})${afterR}` : `${baseR}`;
 
+    const priceCell = IS_ADMIN
+      ? `
+        <div style="display:flex; gap:4px; justify-content:flex-end; align-items:center;">
+          <span class="orig-muted">(${baseR})</span>
+          <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
+                 inputmode="numeric" pattern="\\d*" value="${afterR}">
+        </div>`
+      : `<span>${displayText}</span>`;
 
     const discCell =
-      `<div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
+      `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
          <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
                 inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
          <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
@@ -417,10 +419,10 @@ function renderCart() {
         <span style="display:inline-block; width:28px; text-align:center;">${it.qty}</span>
         <button type="button" data-act="plus" data-i="${idx}">+</button>
       </td>
-      <td style="text-align:right;">${Number(it.mrp_price||0).toFixed(2)}</td>
+      <td style="text-align:right;">${round0(it.mrp_price||0)}</td>
       <td style="text-align:right;">${priceCell}</td>
-      <td style="text-align:right;">${discCell}</td>
-      
+      <td style="text-align:center;">${discCell}</td>
+      <td style="text-align:right;"></td>
     `;
     tb.appendChild(tr);
   });
@@ -430,8 +432,9 @@ function renderCart() {
   persistState();
 }
 
-
-// Qty & remove controls (unchanged)
+/* =================
+   Qty & remove controls
+   ================= */
 document.querySelector('#cartTable').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
@@ -448,77 +451,8 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   if (act === 'remove'){ cart.splice(i, 1); renderCart(); }
 });
 
-// Click "Apply" sets per-row discount with guard
-document.querySelector('#cartTable').addEventListener('click', (e)=>{
-  const btn = e.target.closest('button.disc-apply');
-  if (!btn) return;
-  const i = +btn.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
-
-  const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
-  const v = parseFloat((input && input.value) || '0');
-  const pct = isNaN(v) || v < 0 ? 0 : v;
-
-  // per-item guard
-  const unitSell   = Number(cart[i].price || 0);
-  const unitBought = Number(cart[i].bought_price || 0);
-  const unitAfter  = unitSell * (1 - pct/100);
-  if (pct > 0 && unitAfter < (unitBought + 150)) {
-    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    return;
-  }
-
-  cart[i].disc_pct = pct; // 0 clears this row's discount
-  renderCart();
-});
-
-// Tidy & live-apply on change
-// Admin edits AFTER price via sp-input; compute disc_pct from base (price). Base never changes.
-document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!e.target.classList.contains('sp-input')) return;
-
-  const i = +e.target.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
-
-  const base   = Number(cart[i].price || 0);         // original SP (immutable)
-  const bought = Number(cart[i].bought_price || 0);
-  const afterInput = parseFloat(e.target.value);
-
-  // Invalid → revert to current effective after
-  const currentPct  = Number(cart[i].disc_pct || 0);
-  const currentAfter = currentPct > 0 ? Math.round(base * (1 - currentPct/100)) : base;
-
-  if (isNaN(afterInput) || afterInput <= 0) {
-    e.target.value = currentAfter.toFixed(2);
-    return;
-  }
-
-  // If admin sets after >= base → no discount
-  if (afterInput >= base) {
-    cart[i].disc_pct = 0;
-    e.target.value = base.toFixed(2);
-    renderCart();
-    return;
-  }
-
-  // Guard: unit after must be >= bought + 150
-  if (afterInput < (bought + 150)) {
-    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    e.target.value = currentAfter.toFixed(2);
-    return;
-  }
-
-  // Compute and store per-row discount % from base → after
-  const pct = (1 - (afterInput / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;  // keep 2 decimals
-  renderCart();
-});
-
-
-
-
 /* =================
-   Per-row discount
+   Per-row discount (Apply button)
    ================= */
 document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const btn = e.target.closest('button.disc-apply');
@@ -530,7 +464,6 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
   const v = parseFloat((input && input.value) || '0');
   const pct = isNaN(v) || v < 0 ? 0 : v;
 
-  // Per-item guard: discounted UNIT price must be >= bought + 150
   const unitSell   = Number(cart[i].price || 0);
   const unitBought = Number(cart[i].bought_price || 0);
   const unitAfter  = unitSell * (1 - pct/100);
@@ -543,7 +476,54 @@ document.querySelector('#cartTable').addEventListener('click', (e)=>{
   renderCart();
 });
 
-// keep input tidy
+/* =================
+   Admin edits: after-price -> compute discount%
+   ================= */
+document.querySelector('#cartTable').addEventListener('change', (e)=>{
+  if (!e.target.classList.contains('sp-input')) return;
+
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+
+  const base   = Number(cart[i].price || 0);          // immutable base SP
+  const bought = Number(cart[i].bought_price || 0);
+  const raw    = parseFloat(e.target.value);
+  const afterInput = round0(isNaN(raw) ? 0 : raw);     // round to whole
+  e.target.value = afterInput;                         // reflect rounding
+
+  // current effective after for revert
+  const currentPct   = Number(cart[i].disc_pct || 0);
+  const currentAfter = currentPct > 0 ? round0(base * (1 - currentPct/100)) : round0(base);
+
+  if (afterInput <= 0) {
+    e.target.value = currentAfter;
+    return;
+  }
+
+  // No discount if admin sets >= base
+  if (afterInput >= round0(base)) {
+    cart[i].disc_pct = 0;
+    e.target.value = round0(base);
+    renderCart();
+    return;
+  }
+
+  // Guard
+  if (afterInput < (round0(bought) + 150)) {
+    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
+    e.target.value = currentAfter;
+    return;
+  }
+
+  // compute % from base → after
+  const pct = (1 - (afterInput / base)) * 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;  // keep 2 decimals for % value
+  renderCart();
+});
+
+/* =================
+   keep per-row % input tidy
+   ================= */
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('disc-input')) return;
   const i = +e.target.getAttribute('data-i');
@@ -567,12 +547,12 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     return;
   }
 
-  // percent only (your rule)
+  // percent only (allowed set)
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
 
-  // ✅ Per-item guard for ALL rows that don't already have per-row discount
+  // Guard for all rows (respecting row overrides)
   for (const it of cart) {
     const rowPct = Number(it.disc_pct||0);
     const usePct = rowPct > 0 ? rowPct : pct;
@@ -615,8 +595,16 @@ async function addBarcode() {
     });
     const j = await r.json();
     if (!j.ok) { alert('Barcode not found'); return; }
-    // ensure per-row field is set on incoming item
-    upsertCartItem({ ...j.item, disc_pct: 0 });
+    // coerce prices to whole numbers
+    const item = {
+      ...j.item,
+      mrp_price: round0(j.item.mrp_price),
+      price:     round0(j.item.price),
+      bought_price: Number(j.item.bought_price || 0),
+      qty: Number(j.item.qty || 1),
+      disc_pct: 0
+    };
+    upsertCartItem(item);
   } catch { alert('Network error'); }
 }
 document.getElementById('barcode').addEventListener('keydown', e => { if (e.key==='Enter') addBarcode(); });
@@ -627,7 +615,7 @@ document.getElementById('btnBarcode').addEventListener('click', addBarcode);
    ================== */
 document.getElementById('btnAdd').addEventListener('click', ()=>{
   const brand = document.getElementById('mBrand').value.trim();
-  const price = parseFloat(document.getElementById('mPrice').value||0);
+  const price = round0(document.getElementById('mPrice').value||0);
   const qty = Math.max(1, parseInt(document.getElementById('mQty').value||1,10));
   const size = document.getElementById('mSize').value;
   const category = document.getElementById('mCategory').value;
@@ -635,8 +623,10 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: 0 });
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
+
 document.getElementById('btnSearch').addEventListener('click', ()=> document.getElementById('searchModal').style.display='block');
 document.getElementById('sClose').addEventListener('click', ()=> document.getElementById('searchModal').style.display='none');
+
 document.getElementById('sGo').addEventListener('click', async ()=>{
   const brand = document.getElementById('sBrand').value.trim();
   const category = document.getElementById('sCategory').value;
@@ -647,9 +637,12 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   const j = await r.json(); const box = document.getElementById('sResults'); box.innerHTML='';
   if (!j.ok || !j.results.length) { box.textContent='No results'; return; }
   j.results.forEach((it)=>{
+    const mrpR = round0(it.mrp_price||0), priceR = round0(it.price||0);
     const row = document.createElement('div'); row.style.borderBottom='1px solid #eee'; row.style.padding='6px';
-    row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${Number(it.mrp_price||0).toFixed(2)} | Price: ${Number(it.price||0).toFixed(2)} <button>Add</button>`;
-    row.querySelector('button').addEventListener('click', ()=> upsertCartItem({...it, qty:1, disc_pct: 0}) );
+    row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${mrpR} | Price: ${priceR} <button>Add</button>`;
+    row.querySelector('button').addEventListener('click', ()=> 
+      upsertCartItem({...it, qty:1, disc_pct: 0, mrp_price: mrpR, price: priceR})
+    );
     box.appendChild(row);
   });
 });
@@ -687,10 +680,10 @@ proceedBtn.addEventListener('click', async ()=>{
         code: (i.code || ""),
         brand: i.brand, category: i.category, size: i.size,
         qty: Number(i.qty||0),
-        mrp_price: Number(i.mrp_price||0),
+        mrp_price: round0(i.mrp_price||0),     // rounded outbound
         bought_price: Number(i.bought_price||0),
-        price: Number(i.price||0),
-        disc_pct: Number(i.disc_pct||0)          // ← include per-row discount
+        price: round0(i.price||0),             // rounded outbound
+        disc_pct: Number(i.disc_pct||0)
       })),
       discount: appliedDiscount,
       preview: true // do NOT save
@@ -704,7 +697,7 @@ proceedBtn.addEventListener('click', async ()=>{
     lastInvoiceText = j.invoice_text || '';
     document.getElementById('invoicePreview').textContent = lastInvoiceText;
     setPrintEnabled(true);
-    setAndroidPrintReady(true);   // allowed; saving will happen there
+    setAndroidPrintReady(true);
     proceedBtn.textContent = 'Ready to Print';
   } catch {
     alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
