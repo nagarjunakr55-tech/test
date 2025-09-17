@@ -199,8 +199,11 @@ def create_app() -> Flask:
 
     @app.post("/admin/logout")
     def admin_logout():
-        session["is_admin"] = false
-        return redirect(url_for("history"))
+        # turn off admin without logging the user out
+        session["is_admin"] = False
+        # go back to where they were, or History as a fallback
+        nxt = request.form.get("next") or request.referrer or url_for("history")
+        return redirect(nxt)
 
     @app.post("/invoices/<invoice_id>/update_total")
     def invoices_update_total(invoice_id):
