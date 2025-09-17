@@ -264,7 +264,7 @@ def create_app() -> Flask:
     def home():
         if session.get("user"):
             return redirect(url_for("billing"))
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("admin_login"))
 
 
     # Billing (GET = UI, POST = legacy form fallback)

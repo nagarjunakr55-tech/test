@@ -15,19 +15,8 @@ def ensure_user_schema():
                 );
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
-
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                  id SERIAL PRIMARY KEY,
-                  username TEXT UNIQUE NOT NULL,
-                  password_hash TEXT NOT NULL,
-                  role TEXT NOT NULL DEFAULT 'user',
-                  created_at TIMESTAMPTZ DEFAULT now()
-                );
-            """)
-        
         conn.commit()
+
 
 def create_user(username: str, password: str, role: str = "user"):
     username = (username or "").strip()
