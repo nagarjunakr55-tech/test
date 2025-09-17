@@ -262,7 +262,10 @@ def create_app() -> Flask:
     # -----------------------------
     @app.route("/")
     def home():
-        return redirect(url_for("billing"))
+        if session.get("user"):
+            return redirect(url_for("billing"))
+        return redirect(url_for("auth.login"))
+
 
     # Billing (GET = UI, POST = legacy form fallback)
     @app.route("/billing", methods=["GET", "POST"])
