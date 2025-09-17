@@ -199,7 +199,7 @@ def create_app() -> Flask:
 
     @app.post("/admin/logout")
     def admin_logout():
-        session.clear()
+        session["is_admin"] = false
         return redirect(url_for("history"))
 
     @app.post("/invoices/<invoice_id>/update_total")
