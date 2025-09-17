@@ -62,6 +62,22 @@ nav a.logout{ background:var(--warn); }
   text-decoration:underline;
 }
 
+nav a.billing   { background:#2563eb; color:#fff; }
+nav a.billing:hover   { background:#1d4ed8; }
+
+nav a.history   { background:#6b7280; color:#fff; }
+nav a.history:hover   { background:#4b5563; }
+
+nav a.inventory { background:#f59e0b; color:#111; } /* amber reads better with dark text */
+nav a.inventory:hover { background:#d97706; color:#111; }
+
+nav a.barcodes  { background:#7c3aed; color:#fff; }
+nav a.barcodes:hover  { background:#6d28d9; }
+
+nav a.reports   { background:#16a34a; color:#fff; }
+nav a.reports:hover   { background:#15803d; }
+
+
 button, .btn{ background: var(--accent, #2563eb); color:#fff; }
 .btn-green{   background: var(--accent-2, #16a34a); }
 .btn-muted{   background: var(--muted, #6b7280); }
@@ -159,14 +175,15 @@ button:hover, .btn:hover{ filter: brightness(.95); }
   <header>
     <h2>DRIP Fashions</h2>
     <nav>
-  <a href="{{ url_for('billing') }}">Billing</a>
-  <a href="{{ url_for('history') }}">History</a>
-   <!-- <a href="{{ url_for('home') }}">Home</a>-->
-  <a href="{{ url_for('inventory.inventory_page') }}">Inventory</a>
-  {% if is_admin %}
-  <a href="{{ url_for('labels.page') }}">Barcodes</a>
-  <a href="{{ url_for('reports.profit') }}">Reports</a>
-  {% endif %}
+  <a href="{{ url_for('billing') }}" class="billing">Billing</a>
+<a href="{{ url_for('history') }}" class="history">History</a>
+<!-- <a href="{{ url_for('home') }}">Home</a> -->
+<a href="{{ url_for('inventory.inventory_page') }}" class="inventory">Inventory</a>
+{% if is_admin %}
+  <a href="{{ url_for('labels.page') }}" class="barcodes">Barcodes</a>
+  <a href="{{ url_for('reports.profit') }}" class="reports">Reports</a>
+{% endif %}
+
   
   <a href="{{ url_for('auth.logout') }}" class="logout">
     Logout
