@@ -1,16 +1,11 @@
-# app.py (merged: app.py + auth_bp.py)
+# app.py
 import os
 import json
 import logging
-from urllib.parse import urlparse
-from decimal import Decimal, InvalidOperation
-
 from flask import (
-    Flask, render_template, request, redirect, url_for, jsonify, abort,
-    session, Response, flash, send_from_directory
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response,flash
 )
 
-# ---- your existing imports ----
 from billing_logic import (
     ensure_tables,
     generate_unique_invoice_id,
@@ -18,112 +13,30 @@ from billing_logic import (
     save_to_db,
     get_invoices,
     get_invoice_text,
+    find_product_by_barcode,
     search_products,
     get_last_customer_name,
     calculate_totals,
 )
+
 from db import get_connection
 from labels import labels_bp
 from inventory import inventory_bp
+from flask import send_from_directory
 from reports_bp import reports_bp
 
-# ---- auth logic stays as a module (not a blueprint) ----
-from auth_logic import ensure_user_schema, verify_user
+# from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
 
-
-# ---------------------------------------------------------------------
-# App factory
-# ---------------------------------------------------------------------
 def create_app() -> Flask:
     # Logging (stdout)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     log = logging.getLogger("drip")
 
     app = Flask(__name__)
+    # register_invoice_routes(app)  # <-- REMOVE/COMMENT OUT to avoid duplicate endpoints
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
-    # Ensure auth schema exists (moved from auth_bp.record_once)
-    try:
-        ensure_user_schema()
-        log.info("Boot: ensure_user_schema OK")
-    except Exception as e:
-        log.error("Boot: ensure_user_schema FAILED: %s", e)
 
-    # -----------------------------
-    # Auth: safe redirect handling
-    # -----------------------------
-    _ALLOWED_AFTER_LOGIN_PREFIXES = (
-        "/", "/billing", "/history", "/print", "/reprint"
-    )
-
-    def _safe_next(default_endpoint="billing"):
-        """Return a safe local URL to redirect after login."""
-        raw = request.args.get("next") or ""
-        if not raw:
-            return url_for(default_endpoint)
-        u = urlparse(raw)
-        # disallow external redirects
-        if u.scheme or u.netloc:
-            return url_for(default_endpoint)
-        path = u.path or "/"
-        for pref in _ALLOWED_AFTER_LOGIN_PREFIXES:
-            if path == pref or path.startswith(pref + "/") or path.startswith(pref + "?"):
-                return path + (("?" + u.query) if u.query else "")
-        return url_for(default_endpoint)
-
-    # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
-    PUBLIC_PREFIXES = (
-        "/receipt/lines/",       # plain text invoice body
-        "/receipts/tspl/",       # TSPL for Android printers
-        "/health", "/healthz", "/diag",
-        "/__routes", "/__endpoint",
-        "/static/", "/favicon.ico"
-    )
-
-    # -----------------------------
-    # Global auth guard
-    # -----------------------------
-    @app.before_request
-    def _auth_guard():
-        p = (request.path or "/")
-        # public endpoints
-        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
-            return
-        # allow login itself
-        if p == "/login" or p.startswith("/login?"):
-            return
-        # require session["user"]
-        if not session.get("user"):
-            nxt = request.path
-            if request.query_string:
-                nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
-            return redirect(url_for("auth.login", next=nxt))
-
-    # -----------------------------
-    # Auth routes (keeps endpoint names 'auth.login' & 'auth.logout')
-    # -----------------------------
-    @app.route("/login", methods=["GET", "POST"], endpoint="auth.login")
-    def auth_login():
-        if request.method == "POST":
-            u = (request.form.get("username") or "").strip()
-            p = request.form.get("password") or ""
-            user = verify_user(u, p)
-            if not user:
-                flash("Invalid username or password.", "danger")
-                return render_template("login.html", username=u), 401
-            session["user"] = user  # {'id','username','role'}
-            return redirect(_safe_next())
-        return render_template("login.html")
-
-    @app.route("/logout", endpoint="auth.logout")
-    def auth_logout():
-        session.pop("user", None)
-        flash("Logged out.", "info")
-        return redirect(url_for("auth.login"))
-
-    # -----------------------------
-    # Favicon
-    # -----------------------------
     @app.route('/favicon.ico')
     def favicon():
         return send_from_directory(
@@ -132,9 +45,6 @@ def create_app() -> Flask:
             mimetype='image/vnd.microsoft.icon'
         )
 
-    # -----------------------------
-    # Receipts (Android printing)
-    # -----------------------------
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
         import re
@@ -143,11 +53,19 @@ def create_app() -> Flask:
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
 
+        # Pattern: keep only "Date: DD-MM-YYYY" and drop the clock that may follow
+        # Works even when "Date: ..." is in the middle of the line with "Invoice: ..."
         date_only_pat = re.compile(
             r"(Date:\s*\d{2}-\d{2}-\d{4})(?:\s+\d{2}:\d{2}(?:\s*[AP]M)?)?"
         )
-        lines = [date_only_pat.sub(r"\1", ln) for ln in invoice.splitlines()]
 
+        lines = []
+        for ln in invoice.splitlines():
+            # Replace the Date part inline; leaves the rest of the line unchanged
+            ln = date_only_pat.sub(r"\1", ln)
+            lines.append(ln)
+
+        # Build TSPL
         y = 20
         dy = 28
         tspl = [
@@ -165,18 +83,10 @@ def create_app() -> Flask:
 
         return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
 
-    @app.get("/receipt/lines/<invoice_id>.txt")
-    def receipt_lines(invoice_id):
-        invoice = get_invoice_text(invoice_id)
-        if not invoice:
-            abort(404, f"Invoice {invoice_id} not found")
-        body = invoice if invoice.endswith("\n") else invoice + "\n"
-        return Response(body, mimetype="text/plain; charset=utf-8",
-                        headers={"Cache-Control": "no-store"})
 
-    # -----------------------------
-    # Admin helpers (PIN for History/Reports links)
-    # -----------------------------
+
+
+    # --- Admin helpers (PIN-based; minimal just for History page) ---
     def is_admin() -> bool:
         return session.get("is_admin") is True
 
@@ -186,35 +96,28 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_admin():
+        # makes `is_admin` available in Jinja templates
         return {"is_admin": is_admin()}
 
+    # Restore original endpoint names so templates keep working
     @app.post("/admin/login")
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
         expected = os.getenv("ADMIN_PIN", "5175")
-
-        # Where to go back: explicit next -> referrer -> History
-        nxt = request.form.get("next") or request.referrer or url_for("history")
-
         if pin == expected:
             session["is_admin"] = True
-            return redirect(nxt)
-
-        # Append err=badpin to the return URL
-        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
-        u = urlparse(nxt)
-        q = dict(parse_qsl(u.query, keep_blank_values=True))
-        q["err"] = "badpin"
-        nxt_err = urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
-        return redirect(nxt_err)
+            return redirect(url_for("history"))
+        # back to /history with error flag so template can show "Invalid PIN"
+        return redirect(url_for("history", err="badpin"))
 
     @app.post("/admin/logout")
     def admin_logout():
-        # turn off admin without logging the user out
-        session["is_admin"] = False
-        # go back to where they were, or History as a fallback
-        nxt = request.form.get("next") or request.referrer or url_for("history")
-        return redirect(nxt)
+        session.clear()
+        return redirect(url_for("history"))
+   
+
+    # Admin actions used by history.html
+    from decimal import Decimal, InvalidOperation
 
     @app.post("/invoices/<invoice_id>/update_total")
     def invoices_update_total(invoice_id):
@@ -229,7 +132,7 @@ def create_app() -> Flask:
 
         conn = get_connection()
         try:
-            with conn:
+            with conn:  # psycopg2: commit on success, rollback on exception
                 with conn.cursor() as cur:
                     cur.execute(
                         "UPDATE public.sales_history SET grand_total=%s WHERE invoice_id=%s",
@@ -239,22 +142,60 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
-    # -----------------------------
-    # Blueprints (labels/inventory/reports)
-    # -----------------------------
+    # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
+    PUBLIC_PREFIXES = (
+        "/receipt/lines/",   # <-- allow Android to fetch plain lines
+        "/health", "/healthz", "/diag",
+    )
+
+    @app.before_request
+    def allow_public_endpoints():
+        p = request.path or ""
+        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
+            # skip any auth/redirect logic for these endpoints
+            return
+        # If you enforce login anywhere, it must live BELOW this guard, e.g.:
+        # if not session.get("user_id"):
+        #     return redirect(url_for("login", next=request.full_path))
+
+    @app.get("/receipt/lines/<invoice_id>.txt")
+    def receipt_lines(invoice_id):
+        invoice = get_invoice_text(invoice_id)
+        if not invoice:
+            abort(404, f"Invoice {invoice_id} not found")
+        body = invoice if invoice.endswith("\n") else invoice + "\n"
+        return Response(body, mimetype="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+    # --- Blueprints ---
     app.register_blueprint(labels_bp)
     app.register_blueprint(inventory_bp)
     app.register_blueprint(reports_bp)
 
-    # -----------------------------
-    # Debug helpers
-    # -----------------------------
+    # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")
     def __routes():
         return {"routes": [
             {"rule": r.rule, "endpoint": r.endpoint}
             for r in app.url_map.iter_rules()
         ]}
+
+    @app.post("/invoices/<invoice_id>/delete")
+    def invoices_delete(invoice_id):
+        require_admin()
+        conn = get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # If you have a child table (e.g., sales_items), delete that first
+                    # cur.execute("DELETE FROM public.sales_items WHERE invoice_id=%s", (invoice_id,))
+                    cur.execute(
+                        "DELETE FROM public.sales_history WHERE invoice_id=%s",
+                        (invoice_id,)
+                    )
+            return redirect(url_for("history"))
+        finally:
+            conn.close()
 
     @app.get("/__endpoint/<path:endpoint>")
     def __endpoint_locator(endpoint):
@@ -282,7 +223,7 @@ def create_app() -> Flask:
     except Exception as e:
         log.error("Boot: DB connection FAILED: %s", e)
 
-    # --- Create app tables (non-fatal) ---
+    # --- Create tables (non-fatal) ---
     try:
         ensure_tables()
         log.info("Boot: ensure_tables OK")
@@ -316,25 +257,21 @@ def create_app() -> Flask:
             status["db_error"] = str(e)
         return jsonify(status)
 
-    @app.get("/health")
-    def health():
-        return {"ok": True}, 200
-
     # -----------------------------
-    # Home & pages
+    # Routes
     # -----------------------------
     @app.route("/")
     def home():
-        if session.get("user"):
-            return redirect(url_for("billing"))
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("billing"))
 
     # Billing (GET = UI, POST = legacy form fallback)
     @app.route("/billing", methods=["GET", "POST"])
     def billing():
         if request.method == "POST":
+            # Legacy HTML form fallback
             name = (request.form.get("name") or "Guest").strip() or "Guest"
             phone = (request.form.get("phone") or "").strip()
+
             cart_json = request.form.get("cart_json")
             discount_input = (request.form.get("discount") or "").strip()
 
@@ -353,31 +290,35 @@ def create_app() -> Flask:
                 return render_template("billing.html", error="Enter valid 10-digit phone"), 400
 
             totals = calculate_totals(items, discount_input)
-            items_for_receipt = totals.get("items_effective", items)
+            items_for_receipt = totals.get("items_effective", items)  # <-- use effective items
             invoice_id = generate_unique_invoice_id()
             invoice_text = generate_invoice_text(
                 invoice_id=invoice_id,
                 customer_name=name,
                 customer_phone=phone,
-                items=items_for_receipt,
+                items=items_for_receipt,                            # <-- changed
                 subtotal=totals["subtotal"],
                 gst_amount=totals["gst"],
                 grand_total=totals["grand_total"],
                 discount_amt=totals["discount_amt"]
             )
+
             save_to_db(
                 invoice_id=invoice_id,
                 name=name,
                 phone=phone,
-                items=items_for_receipt,
+                items=items_for_receipt,                            # <-- changed
                 subtotal=totals["subtotal"],
                 discount_amt=totals["discount_amt"],
                 gst_amt=totals["gst"],
                 grand_total=totals["grand_total"],
                 invoice_text=invoice_text
             )
+
+
             return render_template("invoice.html", invoice=invoice_text, invoice_id=invoice_id)
 
+        # GET → rich JS UI (uses /api/*)
         return render_template("billing.html")
 
     @app.route("/history", methods=["GET", "POST"])
@@ -393,6 +334,7 @@ def create_app() -> Flask:
             return render_template("invoice.html", invoice=invoice, invoice_id=invoice_id)
         return f"Invoice {invoice_id} not found", 404
 
+    # Print views (3-inch, no margins)
     @app.route("/print/<invoice_id>")
     def print_invoice(invoice_id):
         invoice = get_invoice_text(invoice_id)
@@ -445,8 +387,9 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "not_found"}), 404
 
         brand, category, size, mrp, bought, sp = row
+
         item = {
-            "code":        code,
+            "code":        code,                       # <-- NEW: include barcode
             "brand":       brand or "",
             "category":    category or "",
             "size":        size or "",
@@ -456,6 +399,11 @@ def create_app() -> Flask:
             "price":       to_int_or_none(sp) or 0
         }
         return jsonify({"ok": True, "item": item})
+
+
+    @app.get("/health")
+    def health():
+        return {"ok": True}, 200
 
     @app.post("/api/search_products")
     def api_search_products():
@@ -486,24 +434,6 @@ def create_app() -> Flask:
         name = get_last_customer_name(phone)
         return jsonify({"ok": True, "name": name or ""})
 
-    @app.post("/invoices/<invoice_id>/delete", endpoint="invoices_delete")
-    def invoices_delete(invoice_id):
-        require_admin()
-        conn = get_connection()
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    # If you have dependent tables, delete those first.
-                    # cur.execute("DELETE FROM public.sales_items WHERE invoice_id=%s", (invoice_id,))
-                    cur.execute(
-                        "DELETE FROM public.sales_history WHERE invoice_id=%s",
-                        (invoice_id,)
-                    )
-            return redirect(url_for("history"))
-        finally:
-            conn.close()
-    
-
     @app.post("/api/checkout")
     def api_checkout():
         data = request.get_json(silent=True) or {}
@@ -525,6 +455,7 @@ def create_app() -> Flask:
         items_for_receipt = totals.get("items_effective", items)
         is_preview = bool(data.get("preview"))
 
+        # Preview path: DO NOT SAVE
         if is_preview:
             invoice_text = generate_invoice_text(
                 invoice_id="",
@@ -538,6 +469,8 @@ def create_app() -> Flask:
             )
             return jsonify({"ok": True, "invoice_text": invoice_text})
 
+
+        # Commit path (Android Print): SAVE to DB
         invoice_id = generate_unique_invoice_id()
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id,
@@ -549,6 +482,7 @@ def create_app() -> Flask:
             grand_total=totals["grand_total"],
             discount_amt=totals["discount_amt"],
         )
+
         save_to_db(
             invoice_id=invoice_id,
             name=cust_name,
@@ -560,15 +494,20 @@ def create_app() -> Flask:
             grand_total=totals["grand_total"],
             invoice_text=invoice_text
         )
+
         return jsonify({"ok": True, "invoice_id": invoice_id, "invoice_text": invoice_text})
 
     return app
 
 
-# Create the app
 app = create_app()
 
-# Dev server entrypoint
+# --- Dev server entrypoint ---
 if __name__ == "__main__":
+    try:
+        import auth_init  # noqa: F401
+    except Exception:
+        pass
+
     print("Starting dev server on http://127.0.0.1:5001 …")
     app.run(host="0.0.0.0", port=5000, debug=True)
