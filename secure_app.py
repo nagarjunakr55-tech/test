@@ -24,7 +24,7 @@ def require_login():
         return
     if not session.get("user"):
         next_url = request.full_path if request.query_string else request.path
-        return redirect(url_for("auth.login", next=next_url))
+        return redirect(url_for("login", next=next_url))
 
 if __name__ == "__main__":
     print("Starting secure server on http://127.0.0.1:5000 …")
