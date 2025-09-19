@@ -50,13 +50,7 @@ def create_app() -> Flask:
         "/", "/billing", "/history", "/print", "/reprint"
     )    
 
-    PUBLIC_PREFIXES = (
-        "/receipt/lines/",       # plain text invoice body
-        "/receipts/tspl/",       # TSPL for Android printers
-        "/health", "/healthz", "/diag",
-        "/__routes", "/__endpoint",
-        "/static/", "/favicon.ico"
-    )
+    
 
     # -----------------------------
     # Global auth guard
@@ -64,18 +58,22 @@ def create_app() -> Flask:
     @app.before_request
     def _auth_guard():
         p = (request.path or "/")
-        # public endpoints
+
+        # 1) Public prefixes
         if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
             return
-        # allow login itself
-        if p == "/login" or p.startswith("/login?"):
+
+        # 2) Allow login (and optional logout) pages
+        if p in ("/login", "/logout"):
             return
-        # require session["user"]
+
+        # 3) Enforce login
         if not session.get("user"):
             nxt = request.path
             if request.query_string:
                 nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
             return redirect(url_for("login", next=nxt))
+
 
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
@@ -188,20 +186,17 @@ def create_app() -> Flask:
             conn.close()
 
     # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
+    _PUBLIC_AFTER_LOGIN_PREFIXES = ("/", "/billing", "/history", "/print", "/reprint")
+
     PUBLIC_PREFIXES = (
-        "/receipt/lines/",   # <-- allow Android to fetch plain lines
+        "/receipt/lines/",   # plain invoice text for Android
+        "/receipts/tspl/",   # TSPL receipt download (PUBLIC)
+        "/labels/tspl/",     # TSPL label download (PUBLIC, from labels_bp)
         "/health", "/healthz", "/diag",
+        "/__routes", "/__endpoint",
+        "/static/", "/favicon.ico"
     )
 
-    @app.before_request
-    def allow_public_endpoints():
-        p = request.path or ""
-        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
-            # skip any auth/redirect logic for these endpoints
-            return
-        # If you enforce login anywhere, it must live BELOW this guard, e.g.:
-        # if not session.get("user_id"):
-        #     return redirect(url_for("login", next=request.full_path))
 
     @app.get("/receipt/lines/<invoice_id>.txt")
     def receipt_lines(invoice_id):
