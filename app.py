@@ -50,6 +50,33 @@ def create_app() -> Flask:
         "/", "/billing", "/history", "/print", "/reprint"
     )    
 
+    PUBLIC_PREFIXES = (
+        "/receipt/lines/",       # plain text invoice body
+        "/receipts/tspl/",       # TSPL for Android printers
+        "/health", "/healthz", "/diag",
+        "/__routes", "/__endpoint",
+        "/static/", "/favicon.ico"
+    )
+
+    # -----------------------------
+    # Global auth guard
+    # -----------------------------
+    @app.before_request
+    def _auth_guard():
+        p = (request.path or "/")
+        # public endpoints
+        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
+            return
+        # allow login itself
+        if p == "/login" or p.startswith("/login?"):
+            return
+        # require session["user"]
+        if not session.get("user"):
+            nxt = request.path
+            if request.query_string:
+                nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
+            return redirect(url_for("login", next=nxt))
+
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
         import re
@@ -124,7 +151,7 @@ def create_app() -> Flask:
         q["err"] = "badpin"
         nxt_err = urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
         return redirect(nxt_err)
-        
+
     @app.post("/admin/logout")
     def admin_logout():
         # turn off admin without logging the user out
