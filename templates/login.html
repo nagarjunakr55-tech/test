@@ -27,7 +27,7 @@
     {% endwith %}
     <div class="card">
       <h2 style="margin-top:0;">Sign in</h2>
-      <form method="post" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
+      <form method="post" action="{{ url_for('login', next=request.args.get('next')) }}">
         <label>Username</label>
         <input name="username" value="{{ username or '' }}" autocomplete="username" required>
         <label>Password</label>
