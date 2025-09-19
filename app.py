@@ -24,6 +24,8 @@ from labels import labels_bp
 from inventory import inventory_bp
 from flask import send_from_directory
 from reports_bp import reports_bp
+from auth_logic import ensure_user_schema, verify_user
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 # from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
 
@@ -44,6 +46,9 @@ def create_app() -> Flask:
             'favicon.ico',
             mimetype='image/vnd.microsoft.icon'
         )
+    _ALLOWED_AFTER_LOGIN_PREFIXES = (
+        "/", "/billing", "/history", "/print", "/reprint"
+    )    
 
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
@@ -455,6 +460,21 @@ def create_app() -> Flask:
             session["user"] = user  # {'id','username','role'}
             return redirect(_safe_next())
         return render_template("login.html")
+
+    def _safe_next(default_endpoint="billing"):
+        """Return a safe local URL to redirect after login."""
+        raw = request.args.get("next") or ""
+        if not raw:
+            return url_for(default_endpoint)
+        u = urlparse(raw)
+        # disallow external redirects
+        if u.scheme or u.netloc:
+            return url_for(default_endpoint)
+        path = u.path or "/"
+        for pref in _ALLOWED_AFTER_LOGIN_PREFIXES:
+            if path == pref or path.startswith(pref + "/") or path.startswith(pref + "?"):
+                return path + (("?" + u.query) if u.query else "")
+        return url_for(default_endpoint)    
      
 
     @app.post("/api/checkout")
