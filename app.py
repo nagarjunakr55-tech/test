@@ -109,16 +109,29 @@ def create_app() -> Flask:
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
         expected = os.getenv("ADMIN_PIN", "5175")
+
+        # Where to go back: explicit next -> referrer -> History
+        nxt = request.form.get("next") or request.referrer or url_for("history")
+
         if pin == expected:
             session["is_admin"] = True
-            return redirect(url_for("history"))
-        # back to /history with error flag so template can show "Invalid PIN"
-        return redirect(url_for("history", err="badpin"))
+            return redirect(nxt)
 
+        # Append err=badpin to the return URL
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        u = urlparse(nxt)
+        q = dict(parse_qsl(u.query, keep_blank_values=True))
+        q["err"] = "badpin"
+        nxt_err = urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(q), u.fragment))
+        return redirect(nxt_err)
+        
     @app.post("/admin/logout")
     def admin_logout():
-        session.clear()
-        return redirect(url_for("history"))
+        # turn off admin without logging the user out
+        session["is_admin"] = False
+        # go back to where they were, or History as a fallback
+        nxt = request.form.get("next") or request.referrer or url_for("history")
+        return redirect(nxt)
    
 
     # Admin actions used by history.html
