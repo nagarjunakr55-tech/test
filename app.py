@@ -439,7 +439,23 @@ def create_app() -> Flask:
     def logout():
         session.pop("user", None)
         flash("Logged out.", "info")
-        return redirect(url_for("auth.login"))    
+        return redirect(url_for("login"))   
+    # -----------------------------
+    # Auth routes (keeps endpoint names 'auth.login' & 'auth.logout')
+    # -----------------------------
+    @app.route("/login", methods=["GET", "POST"], endpoint="login")
+    def login():
+        if request.method == "POST":
+            u = (request.form.get("username") or "").strip()
+            p = request.form.get("password") or ""
+            user = verify_user(u, p)
+            if not user:
+                flash("Invalid username or password.", "danger")
+                return render_template("login.html", username=u), 401
+            session["user"] = user  # {'id','username','role'}
+            return redirect(_safe_next())
+        return render_template("login.html")
+     
 
     @app.post("/api/checkout")
     def api_checkout():
