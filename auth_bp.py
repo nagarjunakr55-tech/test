@@ -47,7 +47,7 @@ def _guard():
     # if not logged in, redirect to login
     if not session.get("user"):
         next_url = request.full_path if request.query_string else request.path
-        return redirect(url_for("auth.login", next=next_url))
+        return redirect(url_for("login", next=next_url))
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
@@ -73,7 +73,7 @@ def _guard():
         nxt = request.path
         if request.query_string:
             nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
-        return redirect(url_for("auth.login", next=nxt))
+        return redirect(url_for("login", next=nxt))
 
 
 @auth_bp.route("/logout")
