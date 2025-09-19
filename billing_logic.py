@@ -9,7 +9,7 @@ GSTIN = "123123"
 BRAND_NAME = "DRIP"
 
 # Per-item guard padding: unit_after must be >= bought_price + PAD
-GUARD_PAD = 150
+GUARD_PAD = 100
 
 # --- IST helpers --------------------------------------------------------------
 try:

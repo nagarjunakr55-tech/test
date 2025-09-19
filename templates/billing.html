@@ -492,7 +492,7 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   const unitBought = Number(cart[i].bought_price || 0);
   const unitAfter  = unitSell * (1 - pct / 100);
 
-  if (unitAfter < (unitBought + 150)) {
+  if (unitAfter < (unitBought + 100)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
     return;
   }
@@ -540,7 +540,7 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   }
 
   // Guard
-  if (afterInput < (round0(bought) + 150)) {
+  if (afterInput < (round0(bought) + 100)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
     e.target.value = currentAfter;
     return;
@@ -590,7 +590,7 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     const unitSell   = Number(it.price || 0);
     const unitBought = Number(it.bought_price || 0);
     const unitAfter  = unitSell * (1 - usePct/100);
-    if (usePct > 0 && unitAfter < (unitBought + 150)) {
+    if (usePct > 0 && unitAfter < (unitBought + 100)) {
       alert(`Maximum discount reached for ${it.brand || 'item'} (${it.category || ''} ${it.size || ''}).`);
       return;
     }
