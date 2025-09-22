@@ -58,6 +58,11 @@
     e.target.value = e.target.value.toUpperCase();
   });
   const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+  function round0(n){ return Math.round(Number(n || 0)); }
+function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
+
+/* Min profit floor used by the Floor button */
+const MIN_PROFIT = 100;
 </script>
 
 <style>
@@ -71,6 +76,15 @@
 
   /* Apply is invisible but clickable */
   .disc-apply {
+    background: transparent;
+    border: none;
+    color: transparent;
+    opacity: 0;
+    cursor: pointer;
+    width: 40px;  /* give it some hit area */
+    height: 24px;
+  }
+  .floor-btn {
     background: transparent;
     border: none;
     color: transparent;
@@ -403,11 +417,15 @@ function renderCart() {
       : `<span>${displayText}</span>`;
 
     const discCell =
-      `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
-         <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
-                inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
-         <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
-       </div>`;
+  `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+     <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
+            inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
+     <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
+     <button type="button" class="floor-btn"  data-i="${idx}" title="Set to bought+${MIN_PROFIT}">
+       Floor
+     </button>
+   </div>`;
+
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -431,6 +449,37 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
+/* =================
+   Floor price button (per-row)
+   ================= */
+document.querySelector('#cartTable').addEventListener('click', (e) => {
+  const btn = e.target.closest('button.floor-btn');
+  if (!btn) return;
+
+  const i = +btn.dataset.i;
+  if (Number.isNaN(i) || !cart[i]) return;
+
+  const base   = Number(cart[i].price || 0);          // current base selling price (before discounts)
+  const bought = Number(cart[i].bought_price || 0);
+  const floor  = round0(bought + MIN_PROFIT);         // desired after-price
+
+  if (base <= 0) { alert('Invalid base price'); return; }
+
+  // If floor >= base, we cannot "discount up". In that case, clear discount (sell at base).
+  if (floor >= round0(base)) {
+    cart[i].disc_pct = 0;
+    // Optional: inform the user
+    // alert(`Base price (${round0(base)}) is at/below floor (${floor}). Selling at base.`);
+    renderCart();
+    return;
+  }
+
+  // Compute discount% so that after-price becomes exactly the floor price
+  const pct = (1 - (floor / base)) * 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;   // keep 2 decimals
+  renderCart();
+});
+
 
 /* =================
    Qty & remove controls
