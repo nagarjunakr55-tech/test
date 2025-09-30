@@ -478,17 +478,22 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         )
     """)
 
-    date_str = india_date_str()
+    date_str = india_date_str()  # e.g. "30-09-2025 05:57 PM"
 
-    # invoice header/body
     cur.execute("""
         INSERT INTO sales_history
         (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            to_timestamp(%s, 'DD-MM-YYYY HH12:MI AM'),
+            %s
+        )
         ON CONFLICT (invoice_id) DO NOTHING
     """, (
         invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
+        discount_amt, gst_amt, grand_total, GSTIN,
+        date_str,          # <-- gets parsed by to_timestamp(...)
+        invoice_text
     ))
 
     # record barcode sales (skip manual items without a code)
