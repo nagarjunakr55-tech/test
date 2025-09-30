@@ -449,66 +449,106 @@ def generate_invoice_text(
 # Persistence
 # ---------------------------------
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
+    from psycopg2.extras import register_default_json
+    register_default_json(loads=lambda x: x)  # ensure json.dumps text is fine
+
     conn = get_connection()
     cur = conn.cursor()
-
-    # ensure tables (safe to call)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sales_history (
-            id SERIAL PRIMARY KEY,
-            invoice_id TEXT UNIQUE,
-            customer_name TEXT,
-            phone TEXT,
-            items TEXT,
-            total NUMERIC,
-            discount NUMERIC,
-            gst NUMERIC,
-            grand_total NUMERIC,
-            gstin TEXT,
-            date TEXT,
-            invoice_text TEXT
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sales_barcodes (
-            id SERIAL PRIMARY KEY,
-            invoice_id TEXT,
-            code TEXT,
-            qty INTEGER DEFAULT 1
-        )
-    """)
-
-    date_str = india_date_str()  # e.g. "30-09-2025 05:57 PM"
-
-    cur.execute("""
-        INSERT INTO sales_history
-        (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            to_timestamp(%s, 'DD-MM-YYYY HH12:MI AM'),
-            %s
-        )
-        ON CONFLICT (invoice_id) DO NOTHING
-    """, (
-        invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN,
-        date_str,          # <-- gets parsed by to_timestamp(...)
-        invoice_text
-    ))
-
-    # record barcode sales (skip manual items without a code)
-    for it in items:
-        code = (it.get("code") or "").strip()
-        qty  = int(it.get("qty") or 0)
-        if code and qty > 0:
-            cur.execute(
-                "INSERT INTO sales_barcodes (invoice_id, code, qty) VALUES (%s, %s, %s)",
-                (invoice_id, code, qty)
+    try:
+        # Ensure tables (idempotent)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sales_history (
+                id SERIAL PRIMARY KEY,
+                invoice_id TEXT UNIQUE,
+                customer_name TEXT,
+                phone TEXT,
+                items TEXT,
+                total NUMERIC,
+                discount NUMERIC,
+                gst NUMERIC,
+                grand_total NUMERIC,
+                gstin TEXT,
+                date TEXT,
+                invoice_text TEXT
             )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sales_barcodes (
+                id SERIAL PRIMARY KEY,
+                invoice_id TEXT,
+                code TEXT,
+                qty INTEGER DEFAULT 1
+            )
+        """)
+        # Unique pair (portable way; ignore failures if it already exists)
+        try:
+            cur.execute("CREATE UNIQUE INDEX uniq_sales_barcodes_invoice_code ON sales_barcodes(invoice_id, code)")
+        except Exception:
+            pass
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        date_str = india_date_str()  # "DD-MM-YYYY hh:mm AM/PM"
+
+        # Insert sales_history; RETURNING tells us if it actually inserted
+        cur.execute("""
+            INSERT INTO sales_history
+            (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                to_timestamp(%s, 'DD-MM-YYYY HH12:MI AM'),
+                %s
+            )
+            ON CONFLICT (invoice_id) DO NOTHING
+            RETURNING id
+        """, (
+            invoice_id, name, phone, json.dumps(items), subtotal,
+            discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
+        ))
+        inserted_row = cur.fetchone()  # None if conflicted
+
+        # If row already existed, we can choose to update it (optional)
+        if not inserted_row:
+            # Optional: update totals/text on reprint/resave cases
+            cur.execute("""
+                UPDATE sales_history
+                SET customer_name=%s, phone=%s, items=%s, total=%s, discount=%s,
+                    gst=%s, grand_total=%s, gstin=%s, invoice_text=%s
+                WHERE invoice_id=%s
+                RETURNING id
+            """, (name, phone, json.dumps(items), subtotal, discount_amt,
+                  gst_amt, grand_total, GSTIN, invoice_text, invoice_id))
+            inserted_row = cur.fetchone()
+
+        # Upsert barcode rows; use a SAVEPOINT so one bad item doesn’t kill the receipt
+        for it in items:
+            code = (it.get("code") or "").strip()
+            qty  = int(it.get("qty") or 0)
+            if not (code and qty > 0):
+                continue
+            cur.execute("SAVEPOINT sp_item")
+            try:
+                cur.execute("""
+                    INSERT INTO sales_barcodes (invoice_id, code, qty)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (invoice_id, code)
+                    DO UPDATE SET qty = sales_barcodes.qty + EXCLUDED.qty
+                """, (invoice_id, code, qty))
+            except Exception:
+                # roll back this one item; keep the rest and the main receipt
+                cur.execute("ROLLBACK TO SAVEPOINT sp_item")
+
+        conn.commit()
+
+        # Return True if history row exists now
+        return inserted_row is not None
+
+    except Exception as e:
+        conn.rollback()
+        # surface this upward if you want a 500; or log and return False
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
 
 
 # ---------------------------------
