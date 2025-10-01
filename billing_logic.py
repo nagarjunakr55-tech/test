@@ -451,7 +451,7 @@ def generate_invoice_text(
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
-
+'''
     # ensure tables (safe to call)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sales_history (
@@ -477,6 +477,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
             qty INTEGER DEFAULT 1
         )
     """)
+    '''
 
     date_str = india_date_str()
 
