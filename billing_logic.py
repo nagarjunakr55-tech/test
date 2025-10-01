@@ -484,29 +484,31 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
 # ---------------------------------
 # Queries for history & reprint
 # ---------------------------------
-def get_invoices(search_term=""):
+def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     conn = get_connection()
     cur = conn.cursor()
+
+    base = """
+      SELECT invoice_id, customer_name, phone, date, grand_total
+      FROM sales_history
+    """
+    where = " WHERE phone ILIKE %s OR invoice_id ILIKE %s" if search_term else ""
+    order = " ORDER BY id DESC "
+    sql = base + where + order + " LIMIT %s OFFSET %s"
+
     if search_term:
-        cur.execute("""
-            SELECT invoice_id, customer_name, phone, date, grand_total
-            FROM sales_history
-            WHERE phone ILIKE %s OR invoice_id ILIKE %s
-            ORDER BY
-              to_timestamp(date, 'DD-MM-YYYY HH12:MI AM') DESC,
-              id DESC
-        """, (f"%{search_term}%", f"%{search_term}%"))
+        params = (f"%{search_term}%", f"%{search_term}%", limit + 1, offset)
     else:
-        cur.execute("""
-            SELECT invoice_id, customer_name, phone, date, grand_total
-            FROM sales_history
-            ORDER BY
-              to_timestamp(date, 'DD-MM-YYYY HH12:MI AM') DESC,
-              id DESC
-        """)
+        params = (limit + 1, offset)
+
+    cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
-    return rows
+
+    # return first 20 + has_next flag
+    return rows[:limit], (len(rows) > limit)
+
+
 
 
 

@@ -361,11 +361,33 @@ def create_app() -> Flask:
         # GET → rich JS UI (uses /api/*)
         return render_template("billing.html")
 
+    PER_PAGE = 20
+
     @app.route("/history", methods=["GET", "POST"])
     def history():
-        search_term = request.form.get("search", "").strip() if request.method == "POST" else ""
-        rows = get_invoices(search_term)
-        return render_template("history.html", rows=rows, search_term=search_term)
+        # keep your POST search; redirect to GET with page=1 so links work
+        if request.method == "POST":
+            q = (request.form.get("search") or "").strip()
+            return redirect(url_for("history", q=q, page=1))
+
+        q = (request.args.get("q") or request.args.get("search") or "").strip()
+        try:
+            page = max(int(request.args.get("page", 1)), 1)
+        except ValueError:
+            page = 1
+
+        offset = (page - 1) * PER_PAGE
+        rows, has_next = get_invoices(q, limit=PER_PAGE, offset=offset)
+
+        return render_template(
+            "history.html",
+            rows=rows,
+            search_term=q,
+            page=page,
+            has_next=has_next,
+            is_admin=is_admin() if 'is_admin' in globals() else False
+        )
+
 
     @app.route("/reprint/<invoice_id>")
     def reprint(invoice_id):
