@@ -489,14 +489,14 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     cur = conn.cursor()
 
     sql_base = """
-        SELECT invoice_id, customer_name, phone, date, grand_total
+        SELECT id, invoice_id, customer_name, phone, date, grand_total
         FROM sales_history
     """
     sql_where = " WHERE phone ILIKE %s OR invoice_id ILIKE %s" if search_term else ""
-    sql_order = " ORDER BY id DESC "           # newest first by id
+    sql_order = " ORDER BY id DESC "
     sql_limit = " LIMIT %s OFFSET %s"
-
     sql = sql_base + sql_where + sql_order + sql_limit
+
     params = (
         (f"%{search_term}%", f"%{search_term}%", limit + 1, offset)
         if search_term else
@@ -506,9 +506,8 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
-
-    # first 20 + "has next" flag
     return rows[:limit], (len(rows) > limit)
+
 
 
 
