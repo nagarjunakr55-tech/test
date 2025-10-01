@@ -517,17 +517,23 @@ def get_invoices(search_term=""):
             SELECT invoice_id, customer_name, phone, date, grand_total
             FROM sales_history
             WHERE phone ILIKE %s OR invoice_id ILIKE %s
-            ORDER BY id DESC
+            ORDER BY
+              to_timestamp(date, 'DD-MM-YYYY HH12:MI AM') DESC,
+              id DESC
         """, (f"%{search_term}%", f"%{search_term}%"))
     else:
         cur.execute("""
             SELECT invoice_id, customer_name, phone, date, grand_total
             FROM sales_history
-            ORDER BY id DESC
+            ORDER BY
+              to_timestamp(date, 'DD-MM-YYYY HH12:MI AM') DESC,
+              id DESC
         """)
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
 
 
 def get_invoice_text(invoice_id):
