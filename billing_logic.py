@@ -43,6 +43,7 @@ def india_date_str(dt=None, include_time: bool = True):
 # Bootstrap tables (Postgres)
 # ---------------------------------
 def ensure_tables():
+    '''
     conn = get_connection()
     cur = conn.cursor()
 
@@ -101,7 +102,7 @@ def ensure_tables():
     conn.commit()
     cur.close()
     conn.close()
-
+    '''
 
 # ---------------------------------
 # Product lookups
@@ -451,8 +452,9 @@ def generate_invoice_text(
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
-'''
+
     # ensure tables (safe to call)
+     '''
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sales_history (
             id SERIAL PRIMARY KEY,
@@ -477,7 +479,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
             qty INTEGER DEFAULT 1
         )
     """)
-    '''
+     '''
 
     date_str = india_date_str()
 
