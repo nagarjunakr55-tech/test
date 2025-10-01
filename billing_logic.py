@@ -505,8 +505,9 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     rows = cur.fetchall()
     conn.close()
 
-    # return first 20 + has_next flag
+    # return only the first `limit` rows and say if more exist
     return rows[:limit], (len(rows) > limit)
+
 
 
 
