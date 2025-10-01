@@ -50,7 +50,13 @@ def create_app() -> Flask:
         "/", "/billing", "/history", "/print", "/reprint"
     )    
 
-    
+    PUBLIC_PREFIXES = (
+        "/receipt/lines/",       # plain text invoice body
+        "/receipts/tspl/",       # TSPL for Android printers
+        "/health", "/healthz", "/diag",
+        "/__routes", "/__endpoint",
+        "/static/", "/favicon.ico"
+    )
 
     # -----------------------------
     # Global auth guard
@@ -58,22 +64,18 @@ def create_app() -> Flask:
     @app.before_request
     def _auth_guard():
         p = (request.path or "/")
-
-        # 1) Public prefixes
+        # public endpoints
         if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
             return
-
-        # 2) Allow login (and optional logout) pages
-        if p in ("/login", "/logout"):
+        # allow login itself
+        if p == "/login" or p.startswith("/login?"):
             return
-
-        # 3) Enforce login
+        # require session["user"]
         if not session.get("user"):
             nxt = request.path
             if request.query_string:
                 nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
             return redirect(url_for("login", next=nxt))
-
 
     @app.get("/receipts/tspl/<invoice_id>.txt")
     def receipts_tspl(invoice_id):
@@ -186,17 +188,20 @@ def create_app() -> Flask:
             conn.close()
 
     # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
-    _PUBLIC_AFTER_LOGIN_PREFIXES = ("/", "/billing", "/history", "/print", "/reprint")
-
     PUBLIC_PREFIXES = (
-        "/receipt/lines/",   # plain invoice text for Android
-        "/receipts/tspl/",   # TSPL receipt download (PUBLIC)
-        "/labels/tspl/",     # TSPL label download (PUBLIC, from labels_bp)
+        "/receipt/lines/",   # <-- allow Android to fetch plain lines
         "/health", "/healthz", "/diag",
-        "/__routes", "/__endpoint",
-        "/static/", "/favicon.ico"
     )
 
+    @app.before_request
+    def allow_public_endpoints():
+        p = request.path or ""
+        if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
+            # skip any auth/redirect logic for these endpoints
+            return
+        # If you enforce login anywhere, it must live BELOW this guard, e.g.:
+        # if not session.get("user_id"):
+        #     return redirect(url_for("login", next=request.full_path))
 
     @app.get("/receipt/lines/<invoice_id>.txt")
     def receipt_lines(invoice_id):
@@ -361,13 +366,14 @@ def create_app() -> Flask:
         # GET → rich JS UI (uses /api/*)
         return render_template("billing.html")
 
+    
+
     PER_PAGE = 20
 
     @app.route("/history", methods=["GET", "POST"])
     def history():
-        # keep your POST search; redirect to GET with page=1 so links work
         if request.method == "POST":
-            q = (request.form.get("search") or "").strip()
+            q = (request.form.get("search") or request.form.get("q") or "").strip()
             return redirect(url_for("history", q=q, page=1))
 
         q = (request.args.get("q") or request.args.get("search") or "").strip()
@@ -379,14 +385,18 @@ def create_app() -> Flask:
         offset = (page - 1) * PER_PAGE
         rows, has_next = get_invoices(q, limit=PER_PAGE, offset=offset)
 
+        # compute a plain boolean; adjust to your auth logic
+        is_admin_flag = bool(session.get("role") == "admin" or session.get("is_admin"))
+
         return render_template(
             "history.html",
             rows=rows,
             search_term=q,
             page=page,
             has_next=has_next,
-            is_admin=is_admin() if 'is_admin' in globals() else False
+            is_admin=is_admin_flag,  # always a bool
         )
+
 
 
     @app.route("/reprint/<invoice_id>")

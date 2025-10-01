@@ -104,6 +104,7 @@ def ensure_tables():
     conn.close()
     '''
 
+
 # ---------------------------------
 # Product lookups
 # ---------------------------------
@@ -452,6 +453,34 @@ def generate_invoice_text(
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
+    '''
+
+    # ensure tables (safe to call)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_history (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT UNIQUE,
+            customer_name TEXT,
+            phone TEXT,
+            items TEXT,
+            total NUMERIC,
+            discount NUMERIC,
+            gst NUMERIC,
+            grand_total NUMERIC,
+            gstin TEXT,
+            date TEXT,
+            invoice_text TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_barcodes (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT,
+            code TEXT,
+            qty INTEGER DEFAULT 1
+        )
+    """)
+    '''
 
     date_str = india_date_str()
 
@@ -489,14 +518,14 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     cur = conn.cursor()
 
     sql_base = """
-        SELECT id, invoice_id, customer_name, phone, date, grand_total
+        SELECT invoice_id, customer_name, phone, date, grand_total
         FROM sales_history
     """
     sql_where = " WHERE phone ILIKE %s OR invoice_id ILIKE %s" if search_term else ""
-    sql_order = " ORDER BY id DESC "
-    sql_limit = " LIMIT %s OFFSET %s"
-    sql = sql_base + sql_where + sql_order + sql_limit
+    sql_order = " ORDER BY id DESC "   # newest by numeric id
+    sql_tail  = " LIMIT %s OFFSET %s"
 
+    sql = sql_base + sql_where + sql_order + sql_tail
     params = (
         (f"%{search_term}%", f"%{search_term}%", limit + 1, offset)
         if search_term else
@@ -506,13 +535,9 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
+
+    # return first 20 + has_next flag
     return rows[:limit], (len(rows) > limit)
-
-
-
-
-
-
 
 
 
