@@ -453,34 +453,6 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn = get_connection()
     cur = conn.cursor()
 
-    # ensure tables (safe to call)
-     '''
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sales_history (
-            id SERIAL PRIMARY KEY,
-            invoice_id TEXT UNIQUE,
-            customer_name TEXT,
-            phone TEXT,
-            items TEXT,
-            total NUMERIC,
-            discount NUMERIC,
-            gst NUMERIC,
-            grand_total NUMERIC,
-            gstin TEXT,
-            date TEXT,
-            invoice_text TEXT
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sales_barcodes (
-            id SERIAL PRIMARY KEY,
-            invoice_id TEXT,
-            code TEXT,
-            qty INTEGER DEFAULT 1
-        )
-    """)
-     '''
-
     date_str = india_date_str()
 
     # invoice header/body
