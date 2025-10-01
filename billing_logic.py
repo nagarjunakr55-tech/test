@@ -488,7 +488,7 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         ON CONFLICT (invoice_id) DO NOTHING
     """, (
         invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, "test", invoice_text
+        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
     ))
 
     # record barcode sales (skip manual items without a code)
