@@ -187,25 +187,39 @@ def create_app() -> Flask:
     @app.post("/invoices/<invoice_id>/update_total")
     def invoices_update_total(invoice_id):
         require_admin()
-        raw = (request.form.get("grand_total") or "").strip()
+        wants_json = "application/json" in (request.headers.get("Accept") or "")
+
+        # Read value from JSON or from form
+        if request.is_json:
+            raw = (request.get_json(silent=True) or {}).get("grand_total", "")
+        else:
+            raw = (request.form.get("grand_total") or "")
+
+        raw = raw.strip()
         try:
             new_total = Decimal(raw)
             if new_total < 0:
                 raise InvalidOperation
         except InvalidOperation:
+            if wants_json:
+                return jsonify({"ok": False, "error": "badtotal"}), 400
             return redirect(url_for("history", err="badtotal"))
 
         conn = get_connection()
         try:
-            with conn:  # psycopg2: commit on success, rollback on exception
+            with conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "UPDATE public.sales_history SET grand_total=%s WHERE invoice_id=%s",
                         (new_total, invoice_id),
                     )
+            if wants_json:
+                return jsonify({"ok": True})
             return redirect(url_for("history"))
         finally:
             conn.close()
+
+
 
     # keep this near your second before_request guard
     PUBLIC_PREFIXES = (
