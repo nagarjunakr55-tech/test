@@ -793,31 +793,68 @@ if (btnPrintEl) {
   });
 }
 
+
 document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
   e.preventDefault();
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
-  const toSave = {...lastPayload}; delete toSave.preview; // commit
-  const btn = e.currentTarget; btn.disabled = true; const old = btn.textContent; btn.textContent = 'Saving...';
+
+  // Build PRINT payload (no preview) — ask server to save async
+  const toSave = { ...lastPayload, preview: false, async: true };
+
   try {
     const res = await fetch('{{ url_for("api_checkout") }}', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(toSave)
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(toSave)
     });
     const j = await res.json();
-    if (!j.ok) throw new Error(j.error || 'Save failed');
+    if (!j.ok) throw new Error(j.error || 'Save-init failed');
+
     lastInvoiceId = j.invoice_id;
     document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
+
+    // ---- PREWARM: make sure printer endpoint is live even if another worker handles it
+    const prewarmUrl = `/receipt/lines/${encodeURIComponent(lastInvoiceId)}.txt`;
+    let ok = false;
+    for (let i = 0; i < 4; i++) {       // try quickly for ~400ms total
+      try {
+        const r = await fetch(prewarmUrl, { method: 'HEAD', cache: 'no-store' });
+        if (r.ok) { ok = true; break; }
+      } catch {}
+      await new Promise(r => setTimeout(r, 120));
+    }
+    // (ok just improves reliability; we still proceed either way)
+
+    // ---- FIRE DEEP LINK
     const base = window.location.origin;
-    const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
-    window.location.href = dl;
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
+    // Attempt custom scheme (user gesture context)
+    window.location.href = deeplink;
+
+    // Fallback 1: Android intent (Chrome)
     setTimeout(() => {
-      const intent = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}#Intent;scheme=drip;package=com.drip.tsplprint;end`;
-      window.location.href = intent;
-    }, 800);
-    btn.textContent = 'Printed';
+      // if the tab is still visible, likely custom scheme didn't grab focus
+      if (document.visibilityState === 'visible') {
+        const intent = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}#Intent;scheme=drip;package=com.drip.tsplprint;end`;
+        window.location.href = intent;
+      }
+    }, 250);
+
+    // Fallback 2: open web print page if app isn’t installed
+    setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        // last resort: open your web print page
+        window.location.href = `/print?invoice_id=${encodeURIComponent(lastInvoiceId)}`;
+      }
+    }, 1200);
+
   } catch (err) {
-    alert(err.message || 'Network error'); btn.textContent = old; btn.disabled = false;
+    alert(err.message || 'Network error');
   }
 });
+
+
+
 
 document.getElementById('btnClear').addEventListener('click', ()=>{
   // reset discount UI/state

@@ -26,8 +26,28 @@ from flask import send_from_directory
 from reports_bp import reports_bp
 from auth_logic import ensure_user_schema, verify_user
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from threading import Thread
+import time
 
-# from routes_invoices import register_invoice_routes  # <-- REMOVE/COMMENT OUT
+PRINT_CACHE = {}           # { code: (invoice_text, expires_epoch) }
+PRINT_CACHE_TTL = 120      # seconds
+
+def _cache_put(code: str, text: str, ttl: int = PRINT_CACHE_TTL):
+    PRINT_CACHE[code] = (text, time.time() + ttl)
+
+def _cache_get(code: str):
+    v = PRINT_CACHE.get(code)
+    if not v:
+        return None
+    text, exp = v
+    if time.time() > exp:
+        PRINT_CACHE.pop(code, None)
+        return None
+    return text
+
+def _cache_pop(code: str):
+    PRINT_CACHE.pop(code, None)
+
 
 def create_app() -> Flask:
     # Logging (stdout)
@@ -81,7 +101,7 @@ def create_app() -> Flask:
     def receipts_tspl(invoice_id):
         import re
         copies = int((request.args.get("copies") or "1").strip() or 1)
-        invoice = get_invoice_text(invoice_id)
+        invoice = _cache_get(invoice_id) or get_invoice_text(invoice_id)
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
 
@@ -187,11 +207,13 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
-    # ---------- PUBLIC allowlist so Android can fetch raw lines without login ----------
+    # keep this near your second before_request guard
     PUBLIC_PREFIXES = (
-        "/receipt/lines/",   # <-- allow Android to fetch plain lines
+        "/receipt/lines/",
+        "/receipts/tspl/",   # ← add this so auth never blocks TSPL fetch
         "/health", "/healthz", "/diag",
     )
+
 
     @app.before_request
     def allow_public_endpoints():
@@ -205,12 +227,13 @@ def create_app() -> Flask:
 
     @app.get("/receipt/lines/<invoice_id>.txt")
     def receipt_lines(invoice_id):
-        invoice = get_invoice_text(invoice_id)
+        invoice = _cache_get(invoice_id) or get_invoice_text(invoice_id)
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
         body = invoice if invoice.endswith("\n") else invoice + "\n"
         return Response(body, mimetype="text/plain; charset=utf-8",
                         headers={"Cache-Control": "no-store"})
+
 
     # --- Blueprints ---
     app.register_blueprint(labels_bp)
@@ -534,7 +557,7 @@ def create_app() -> Flask:
         if not raw:
             return url_for(default_endpoint)
         u = urlparse(raw)
-        # disallow external redirects
+        # disallow external redirects 
         if u.scheme or u.netloc:
             return url_for(default_endpoint)
         path = u.path or "/"
@@ -543,10 +566,11 @@ def create_app() -> Flask:
                 return path + (("?" + u.query) if u.query else "")
         return url_for(default_endpoint)    
      
-
     @app.post("/api/checkout")
     def api_checkout():
+        from threading import Thread
         data = request.get_json(silent=True) or {}
+
         cust_name = (data.get("customer_name") or "Guest").strip() or "Guest"
         phone = (data.get("phone") or "").strip()
 
@@ -565,10 +589,10 @@ def create_app() -> Flask:
         items_for_receipt = totals.get("items_effective", items)
         is_preview = bool(data.get("preview"))
 
-        # Preview path: DO NOT SAVE
+        # ---------- PREVIEW: no ID, no save ----------
         if is_preview:
             invoice_text = generate_invoice_text(
-                invoice_id="",
+                invoice_id="",  # keep ID empty in preview
                 customer_name=cust_name,
                 customer_phone=phone,
                 items=items_for_receipt,
@@ -579,9 +603,9 @@ def create_app() -> Flask:
             )
             return jsonify({"ok": True, "invoice_text": invoice_text})
 
-
-        # Commit path (Android Print): SAVE to DB
-        invoice_id = generate_unique_invoice_id()
+        # ---------- PRINT: generate ID now; allow async save ----------
+        async_save = bool(data.get("async"))
+        invoice_id = generate_unique_invoice_id()  # ID only at print time
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id,
             customer_name=cust_name,
@@ -593,6 +617,35 @@ def create_app() -> Flask:
             discount_amt=totals["discount_amt"],
         )
 
+        if async_save:
+            # Put into short-lived cache so printer endpoints can serve instantly
+            try:
+                _cache_put(invoice_id, invoice_text)  # defined earlier with PRINT_CACHE
+            except Exception:
+                pass
+
+            # Save in background
+            def _persist():
+                try:
+                    save_to_db(
+                        invoice_id=invoice_id,
+                        name=cust_name,
+                        phone=phone,
+                        items=items_for_receipt,
+                        subtotal=totals["subtotal"],
+                        discount_amt=totals["discount_amt"],
+                        gst_amt=totals["gst"],
+                        grand_total=totals["grand_total"],
+                        invoice_text=invoice_text
+                    )
+                except Exception:
+                    # Optional: add logging here
+                    pass
+
+            Thread(target=_persist, daemon=True).start()
+            return jsonify({"ok": True, "invoice_id": invoice_id, "invoice_text": invoice_text})
+
+        # Fallback: synchronous save (if async not requested)
         save_to_db(
             invoice_id=invoice_id,
             name=cust_name,
@@ -604,8 +657,8 @@ def create_app() -> Flask:
             grand_total=totals["grand_total"],
             invoice_text=invoice_text
         )
-
         return jsonify({"ok": True, "invoice_id": invoice_id, "invoice_text": invoice_text})
+
 
     return app
 
