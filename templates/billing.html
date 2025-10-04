@@ -793,66 +793,87 @@ if (btnPrintEl) {
   });
 }
 
-
-
-document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
-  e.preventDefault();
-  if (!lastPayload) { alert('Please click Proceed first.'); return; }
-
-  // Save, but ask server to persist async for speed
-  const toSave = { ...lastPayload, preview: false, async: true };
-
-  const btn = e.currentTarget;
-  const old = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-
-  try {
-    const res = await fetch('{{ url_for("api_checkout") }}', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(toSave),
-      credentials: 'same-origin'
-    });
-    const j = await res.json();
-    if (!j.ok) throw new Error(j.error || 'Save failed');
-
-    lastInvoiceId = j.invoice_id;
-    document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
-
-    const base = window.location.origin;
-
-    // 1) Custom-scheme deep link (works when app has <data android:scheme="drip" android:host="receipt" />)
-    const schemeUrl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
-
-    // 2) Chrome intent fallback (works even if scheme is blocked by the browser)
-    //    Make sure the package matches your app id:
-    const intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + lastInvoiceId)};end`;
-
-    // Try via an <a> click (most reliable across Chrome/Samsung)
-    const a = document.createElement('a');
-    a.href = schemeUrl;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-
-    // Intent fallback shortly after
-    setTimeout(() => {
-      window.location.replace(intentUrl);
-    }, 250);
-
-    // Final web fallback (keeps the flow alive if user cancels or app not installed)
-    setTimeout(() => {
-      window.location.href = base + '/reprint/' + lastInvoiceId;
-    }, 1500);
-
-    btn.textContent = 'Sent to printer';
-  } catch (err) {
-    alert(err.message || 'Network error');
-    btn.textContent = old;
-    btn.disabled = false;
+ function buildSmsText(amount, name, invoiceId) {
+    const wa = "https://chat.whatsapp.com/DhI9NDTeQm6CFOaTRwYwma?mode=wwt";
+    const ig = "https://www.instagram.com/drip_fashions_?igsh=dnkwbmZ6MDdvZnY3&utm_source=qr";
+    return [
+      `Hi ${name}, thanks for shopping at DRIP!`,
+      `Invoice: ${invoiceId}`,
+      `Amount to pay: ₹${amount}`,
+      `WhatsApp: ${wa}`,
+      `Instagram: ${ig}`,
+      `— DRIP`
+    ].join("\n");
   }
-});
+
+  document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
+    e.preventDefault();
+    if (!lastPayload) { alert('Please click Proceed first.'); return; }
+
+    const toSave = { ...lastPayload, preview: false, async: true };
+
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const res = await fetch('{{ url_for("api_checkout") }}', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(toSave),
+        credentials: 'same-origin'
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || 'Save failed');
+
+      lastInvoiceId = j.invoice_id;
+      document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
+      const base = window.location.origin;
+
+      // Build SMS payload
+      const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
+      const phone = (document.getElementById('custPhone').value || '').trim(); // 10-digit
+      const amt   = Math.round(Number(finalTotal || 0));
+      const smsText = buildSmsText(amt, name, lastInvoiceId);
+
+      // Custom scheme
+      const schemeUrl =
+        `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
+        `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
+
+      // Intent fallback
+      const intentUrl =
+        `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
+        `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
+        `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + lastInvoiceId)};end`;
+
+      // Fire custom scheme first
+      const a = document.createElement('a');
+      a.href = schemeUrl;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+
+      // Then intent fallback
+      setTimeout(() => {
+        window.location.replace(intentUrl);
+      }, 250);
+
+      // Final web fallback
+      setTimeout(() => {
+        window.location.href = base + '/reprint/' + lastInvoiceId;
+      }, 1500);
+
+      btn.textContent = 'Sent to printer';
+    } catch (err) {
+      alert(err.message || 'Network error');
+      btn.textContent = old;
+      btn.disabled = false;
+    }
+  });
+
+
 
 
 
