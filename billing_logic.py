@@ -437,7 +437,7 @@ def generate_invoice_text(
     total_label = "Total"
     lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
     lines.append("-" * COLS)
-    lines.append("Thank you for shopping with DRIP!".center(COLS))
+    lines.append("Thanks for shopping with DRIP Fashions!".center(COLS))
     lines.append(" " * COLS)
 
     MARGIN = 2
