@@ -59,10 +59,10 @@
   });
   const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
   function round0(n){ return Math.round(Number(n || 0)); }
-function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
+  function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 
-/* Min profit floor used by the Floor button */
-const MIN_PROFIT = 100;
+  /* Min profit floor used by the Floor button */
+  const MIN_PROFIT = 100;
 </script>
 
 <style>
@@ -81,7 +81,7 @@ const MIN_PROFIT = 100;
     color: transparent;
     opacity: 0;
     cursor: pointer;
-    width: 40px;  /* give it some hit area */
+    width: 40px;
     height: 24px;
   }
   .floor-btn {
@@ -90,7 +90,7 @@ const MIN_PROFIT = 100;
     color: transparent;
     opacity: 0;
     cursor: pointer;
-    width: 40px;  /* give it some hit area */
+    width: 40px;
     height: 24px;
   }
 
@@ -240,13 +240,13 @@ refreshSizes();
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 // Preview/save state
-let appliedDiscount = "";  // "NN%" (only % supported in UI)
+let appliedDiscount = "";  // "NN" numeric string (no %)
 let lastPayload = null;    // built on Proceed (preview only)
 let lastInvoiceId = null;  // set only after SAVE (Android print)
 let lastInvoiceText = "";  // preview text
 // persistence
 const KEY_CART  = "drip_cart_v1";
-const KEY_DISC  = "drip_discount_v1";
+const KEY_DISC  = "[REDACTED_GENERIC_API_KEY_1]";
 const KEY_NAME  = "drip_name_v1";
 const KEY_PHONE = "drip_phone_v1";
 function persistState() {
@@ -283,9 +283,6 @@ function sameKey(a,b){
   return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
 }
 function upsertCartItem(newItem){
-  // ensure per-row discount key exists and persists
-  if (typeof newItem.disc_pct !== 'number') newItem.disc_pct = 0;
-
   const i = cart.findIndex(it => sameKey(it, newItem));
   if (i >= 0) {
     cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
@@ -317,24 +314,17 @@ function invalidateCheckout() {
 }
 
 function globalPct(){
-  if (!appliedDiscount) return 0;
-  if (/%\s*$/.test(appliedDiscount)) {
-    const pct = parseFloat(appliedDiscount);
-    return isNaN(pct) ? 0 : Math.max(0, pct);
-  }
-  return 0;
+  const raw = (appliedDiscount || '').trim();
+  if (!raw) return 0;
+  const v = parseFloat(raw);
+  return isNaN(v) ? 0 : Math.max(0, v);
 }
 
 /* =========
    Totals
    ========= */
 function recalc() {
-  // Global percent (like "10%") – only applies to rows WITHOUT per-row discount
-  let gPct = 0;
-  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
-    const p = parseFloat(appliedDiscount);
-    gPct = isNaN(p) ? 0 : Math.max(0, p);
-  }
+  let gPct = globalPct();
 
   let subtotalBase = 0;        // base SP * qty (shown as "Total")
   let subtotalAfterRows = 0;   // after applying per-row discounts
@@ -389,12 +379,7 @@ function renderCart() {
   const tb = document.querySelector('#cartTable tbody');
   tb.innerHTML = '';
 
-  // global fallback
-  let gPct = 0;
-  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
-    const p = parseFloat(appliedDiscount);
-    gPct = isNaN(p) ? 0 : Math.max(0, p);
-  }
+  let gPct = globalPct();
 
   cart.forEach((it, idx) => {
     const base   = Number(it.price || 0);
@@ -419,13 +404,12 @@ function renderCart() {
     const discCell =
   `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
      <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
-            inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
+            inputmode="numeric" pattern="\\d*" value="${(it.disc_pct ? Number(it.disc_pct) : '')}">
      <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
      <button type="button" class="floor-btn"  data-i="${idx}" title="Set to bought+${MIN_PROFIT}">
        Floor
      </button>
    </div>`;
-
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -449,6 +433,7 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
+
 /* =================
    Floor price button (per-row)
    ================= */
@@ -468,8 +453,6 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   // If floor >= base, we cannot "discount up". In that case, clear discount (sell at base).
   if (floor >= round0(base)) {
     cart[i].disc_pct = 0;
-    // Optional: inform the user
-    // alert(`Base price (${round0(base)}) is at/below floor (${floor}). Selling at base.`);
     renderCart();
     return;
   }
@@ -479,7 +462,6 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   cart[i].disc_pct = Math.round(pct * 100) / 100;   // keep 2 decimals
   renderCart();
 });
-
 
 /* =================
    Qty & remove controls
@@ -519,8 +501,8 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
 
   // Blank -> clear row discount and re-render
   if (raw === '') {
-    cart[i].disc_pct = 0;
-    renderCart();
+    cart[i].disc_pct = 0;   // logical zero in calc
+    renderCart();           // will re-render the box to ""
     return;
   }
 
@@ -554,7 +536,6 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
 
   renderCart();
 });
-
 
 /* =================
    Admin edits: after-price -> compute discount%
@@ -608,8 +589,16 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('disc-input')) return;
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
-  const v = parseFloat(e.target.value);
-  e.target.value = isNaN(v) || v < 0 ? 0 : v;
+
+  const raw = (e.target.value ?? '').trim();
+  if (raw === '') {
+    // leave it blank; don't overwrite with 0
+    return;
+  }
+
+  let v = parseFloat(raw);
+  if (isNaN(v) || v < 0) v = 0;
+  e.target.value = String(v);
 });
 
 /* =================
@@ -627,7 +616,7 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     return;
   }
 
-  // percent only (allowed set)
+  // allow "10" or "10%" in the box, persist only "10"
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
@@ -645,7 +634,10 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     }
   }
 
-  appliedDiscount = `${pct}%`;
+  // ✅ store/display numeric only (no %)
+  appliedDiscount = String(pct);
+  document.getElementById('discount').value = String(pct);
+
   renderCart();
   invalidateCheckout();
   persistState();
@@ -682,7 +674,7 @@ async function addBarcode() {
       price:     round0(j.item.price),
       bought_price: Number(j.item.bought_price || 0),
       qty: Number(j.item.qty || 1),
-      disc_pct: 0
+      disc_pct: undefined
     };
     upsertCartItem(item);
   } catch { alert('Network error'); }
@@ -700,7 +692,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   const size = document.getElementById('mSize').value;
   const category = document.getElementById('mCategory').value;
   if (!brand || !price) { alert('Enter brand and price'); return; }
-  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: 0 });
+  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: undefined });
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 
@@ -721,7 +713,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
     const row = document.createElement('div'); row.style.borderBottom='1px solid #eee'; row.style.padding='6px';
     row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${mrpR} | Price: ${priceR} <button>Add</button>`;
     row.querySelector('button').addEventListener('click', ()=> 
-      upsertCartItem({...it, qty:1, disc_pct: 0, mrp_price: mrpR, price: priceR})
+      upsertCartItem({...it, qty:1, disc_pct: undefined, mrp_price: mrpR, price: priceR})
     );
     box.appendChild(row);
   });
@@ -765,6 +757,8 @@ proceedBtn.addEventListener('click', async ()=>{
         price: round0(i.price||0),             // rounded outbound
         disc_pct: Number(i.disc_pct||0)
       })),
+      // If your backend expects "10%" instead of "10", use:
+      // discount: appliedDiscount ? `${appliedDiscount}%` : "",
       discount: appliedDiscount,
       preview: true // do NOT save
     };
@@ -797,10 +791,10 @@ if (btnPrintEl) {
 function buildSmsText(name, amt) {
   return (
     `Hi ${name}\n\n` +
-    `Your bill is ₹ ${amt}. \n\n` +
+    `Your bill is ₹ ${amt}. \n` +
     `Follow us on \n` +
     `Whatsapp: https://t.ly/hcWjm ` +
-    `Instagram: https://t.ly/CGh_x \n\n` +
+    `Instagram: https://t.ly/CGh_x \n` +
     `Thanks \n` +
     `DRIP`
   );
@@ -876,14 +870,6 @@ document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>
   }
 });
 
-
-
-
-
-
-
-
-
 document.getElementById('btnClear').addEventListener('click', ()=>{
   // reset discount UI/state
   appliedDiscount = "";
@@ -916,7 +902,8 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
    Init
    ========= */
 (function init(){
-  restoreState(); renderCart();
+  restoreState();
+  renderCart();
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
   if (code) {
