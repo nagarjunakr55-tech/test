@@ -285,10 +285,11 @@ function lpClampRedeem(raw) {
 }
 
 function lpEstimatedEarn(finalAmt) {
-  // mirror backend rule: floor(final / 100) * lpRate
-  const base = Math.max(0, Math.floor(Number(finalAmt || 0)));
-  return Math.floor(base / 100) * lpRate;
+  // mirror backend rule: round to whole rupees, then compute
+  const base = Math.max(0, Math.round(Number(finalAmt || 0)));
+  return Math.floor(base / 100) * lpRate; // lpRate is 2 → ₹600 => 12
 }
+
 
 function lpRefreshUI() {
   document.getElementById('lpAvail').textContent = `Available: ${lpAvailable}`;
@@ -948,7 +949,9 @@ document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>
     const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
     const phone = (document.getElementById('custPhone').value || '').trim(); // 10-digit
     const amt   = Math.max(0, Math.round(Number(finalTotal ?? 0)));
-    const earned = lpEstimatedEarn(finalTotal);
+    const earned = (typeof j.points_earned === 'number')
+    ? j.points_earned
+    : lpEstimatedEarn(finalTotal);
       // pass earned directly; no extra addendum needed
       const smsText = buildSmsText(name, amt, earned);
 
