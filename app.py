@@ -180,6 +180,11 @@ def create_app() -> Flask:
     def home():
         return redirect(url_for("billing"))
 
+    # --- Blueprints ---
+    app.register_blueprint(labels_bp)
+    app.register_blueprint(inventory_bp)
+    app.register_blueprint(reports_bp)    
+
     # Billing (GET = UI, POST = legacy form fallback)
     @app.route("/billing", methods=["GET", "POST"])
     def billing():
