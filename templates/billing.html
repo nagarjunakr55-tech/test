@@ -66,6 +66,8 @@
 </script>
 
 <style>
+  #loyaltyPanel .nowrap { white-space: nowrap; }
+
   .sp-input{
     width: 6ch;
     max-width: 6ch;
@@ -185,6 +187,27 @@
     Clear
   </button>
 </div>
+<!-- Loyalty panel -->
+<div id="loyaltyPanel" class="row" style="margin-top:10px; align-items:center; gap:10px; display:flex;">
+  
+  <span id="lpAvail" title="Available points">Available: 0</span>
+  <span id="lpEarnPreview" title="Estimated points you’ll earn on this bill">(Earn: 0)</span>
+
+  <input id="lpRedeem"
+       type="text"
+       inputmode="numeric"
+       pattern="\d*"
+       maxlength="3"
+       style="width:3.5ch; text-align:right; padding:4px;">
+
+
+  <button id="lpApply"  type="button"
+          style="background:#00695c;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
+    Apply
+  </button>
+  
+</div>
+
 
 <!-- Invoice preview -->
 <h3 style="margin-top:12px;">Invoice Preview</h3>
@@ -237,6 +260,7 @@ refreshSizes();
 /* =========
    State
    ========= */
+
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 // Preview/save state
@@ -249,6 +273,50 @@ const KEY_CART  = "drip_cart_v1";
 const KEY_DISC  = "[REDACTED_GENERIC_API_KEY_1]";
 const KEY_NAME  = "drip_name_v1";
 const KEY_PHONE = "drip_phone_v1";
+// Loyalty state
+let lpAvailable = 0;   // fetched from backend
+let lpCap       = 100; // fetched from backend; default 100
+let lpRate      = 2;   // points per ₹100; backend can override
+let lpRedeem    = 0;   // user-applied this bill
+
+function lpClampRedeem(raw) {
+  const n = Math.max(0, Math.floor(Number(raw || 0)));
+  return Math.min(n, lpAvailable, lpCap);
+}
+
+function lpEstimatedEarn(finalAmt) {
+  // mirror backend rule: floor(final / 100) * lpRate
+  const base = Math.max(0, Math.floor(Number(finalAmt || 0)));
+  return Math.floor(base / 100) * lpRate;
+}
+
+function lpRefreshUI() {
+  document.getElementById('lpAvail').textContent = `Available: ${lpAvailable}`;
+  const earn = lpEstimatedEarn(finalTotal);
+document.getElementById('lpEarnPreview').textContent = `(Earn ₹${earn})`;
+  document.getElementById('lpRedeem').value = lpRedeem ? String(lpRedeem) : '';
+
+}
+async function fetchAndSetLoyalty(phone){
+  try {
+    const r = await fetch(`/api/loyalty_points?phone=${encodeURIComponent(phone)}`);
+    const j = await r.json();
+    if (j && j.ok) {
+      lpAvailable = Number(j.points || 0);
+      lpCap       = Number(j.cap || 100);
+      lpRate      = Number(j.rate_per_100 || lpRate);
+    } else {
+      lpAvailable = 0;
+    }
+  } catch {
+    lpAvailable = 0;
+  }
+  // After updating loyalty, refresh totals + UI
+  recalc();
+  lpRefreshUI();
+}
+
+
 function persistState() {
   try {
     localStorage.setItem(KEY_CART, JSON.stringify(cart));
@@ -365,11 +433,21 @@ function recalc() {
     finalTotalLocal = subtotalAfterRows;
   }
 
-  subtotal   = subtotalBase;
   finalTotal = Math.max(0, finalTotalLocal);
+
+  subtotal   = subtotalBase;
+  let finalBeforeRedeem = Math.max(0, finalTotalLocal);
+
+  // Loyalty redemption is ₹-for-point; clamp by balance/cap and not below 0
+  const maxRedeemThisBill = Math.min(lpAvailable, lpCap);
+  const appliedRedeem = Math.min(lpRedeem, maxRedeemThisBill, Math.floor(finalBeforeRedeem));
+  finalTotal = Math.max(0, finalBeforeRedeem - appliedRedeem);
 
   document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
+
+  // update earn preview
+  lpRefreshUI();
 }
 
 /* =================
@@ -723,15 +801,48 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
    Autofill name by phone #
    ========================== */
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
-  const ph = e.target.value.replace(/\D/g,'').slice(0,10); e.target.value = ph;
+  const ph = e.target.value.replace(/\D/g,'').slice(0,10);
+  e.target.value = ph;
+
   if (ph.length === 10) {
-    const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
-    const j = await r.json(); if (j.ok && j.name) document.getElementById('custName').value = j.name;
+    // last name autofill
+    try {
+      const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
+      const j = await r.json();
+      if (j.ok && j.name) document.getElementById('custName').value = j.name;
+    } catch {}
+
+    // loyalty
+    lpRedeem = 0;           // fresh bill => clear any previous redeem entry
+    await fetchAndSetLoyalty(ph);
   }
+
   invalidateCheckout();
   persistState();
 });
+
+
 document.getElementById('custName').addEventListener('input', ()=>{ invalidateCheckout(); persistState(); });
+
+
+
+// Loyalty: Apply/Remove
+document.getElementById('lpApply').addEventListener('click', () => {
+  const raw = document.getElementById('lpRedeem').value;
+  lpRedeem = lpClampRedeem(raw);
+  recalc();
+  lpRefreshUI();
+  invalidateCheckout();
+});
+
+
+// Keep input tidy
+document.getElementById('lpRedeem').addEventListener('input', (e) => {
+  // digits only, max 3
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
+});
+
+
 
 /* ==========================
    Proceed / Print / Clear
@@ -760,6 +871,7 @@ proceedBtn.addEventListener('click', async ()=>{
       // If your backend expects "10%" instead of "10", use:
       // discount: appliedDiscount ? `${appliedDiscount}%` : "",
       discount: appliedDiscount,
+      redeem_points: Number(lpRedeem || 0),
       preview: true // do NOT save
     };
     const res = await fetch('{{ url_for("api_checkout") }}', {
@@ -787,17 +899,21 @@ if (btnPrintEl) {
   });
 }
 
+
 // Exact-format SMS text
-function buildSmsText(name, amt) {
+function buildSmsText(name, amt, earned = 0) {
   return (
     `Hi ${name},\n\n` +
-    `Your bill is Rs ${amt}.\n\n` +
+    `Your bill is Rs ${amt}.\n` +
+    (earned > 0 ? `Earned Rs ${earned}\n\n` : `\n`) +
     `Follow us on:\n` +
     `WhatsApp: https://t.ly/hcWjm\n` +
     `Insta: https://t.ly/CGh_x\n\n` +
     `Thanks for shopping with DRIP Fashions!`
   );
 }
+
+
 
 
 document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
@@ -832,7 +948,10 @@ document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>
     const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
     const phone = (document.getElementById('custPhone').value || '').trim(); // 10-digit
     const amt   = Math.max(0, Math.round(Number(finalTotal ?? 0)));
-    const smsText = buildSmsText(name, amt);
+    const earned = lpEstimatedEarn(finalTotal);
+      // pass earned directly; no extra addendum needed
+      const smsText = buildSmsText(name, amt, earned);
+
 
     // 1) Custom-scheme deep link (app prints + sends SMS)
     const schemeUrl =
@@ -896,6 +1015,10 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   lastInvoiceId = null; lastPayload = null; lastInvoiceText = "";
   setPrintEnabled(false);
   setAndroidPrintReady(false);
+    // reset loyalty state
+  lpAvailable = 0; lpRedeem = 0;
+  lpRefreshUI();
+
 });
 
 /* =========
@@ -904,6 +1027,14 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
 (function init(){
   restoreState();
   renderCart();
+
+  // NEW: prefetch loyalty if the phone already looks valid
+  const ph = (document.getElementById('custPhone').value || '').trim();
+  if (/^\d{10}$/.test(ph)) {
+    fetchAndSetLoyalty(ph);
+  }
+
+  // existing barcode deep-link handling...
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
   if (code) {
@@ -914,5 +1045,6 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
     window.history.replaceState({}, '', clean);
   }
 })();
+
 </script>
 {% endblock %}
