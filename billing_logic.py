@@ -435,8 +435,19 @@ def generate_invoice_text(
             lines.append(f"{clamp('Balance (₹)', LBL_W)}{str(bal).rjust(COLS - LBL_W)}")
         lines.append("-" * COLS)
 
-    # ==== Totals block ====
+    # ==== Totals block ====    
+
     saved_amt = float(discount_amt or 0)
+
+    # --- NEW: compute extra savings if operator manually overrode total ---
+    try:
+        calc_total = float(subtotal or 0) - float(saved_amt or 0)
+        override_diff = calc_total - float(grand_total or 0)
+        if override_diff > 0.009:  # treat as additional savings
+            saved_amt += override_diff
+    except Exception:
+        pass
+
     if saved_amt > 0:
         lines.append(f"{clamp('Saved', LBL_W)}{('-' + format(saved_amt, '.2f')).rjust(COLS - LBL_W)}")
 
@@ -445,6 +456,7 @@ def generate_invoice_text(
         lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
 
     lines.append(f"{clamp('Total', LBL_W)}{format(float(grand_total or 0), '.2f').rjust(COLS - LBL_W)}")
+
     lines.append("-" * COLS)
 
     lines.append("Thanks for shopping with DRIP Fashions!".center(COLS))
