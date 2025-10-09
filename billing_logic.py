@@ -533,6 +533,7 @@ def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
     return rows[:limit], (len(rows) > limit)
 
 
+
 def get_invoice_text(invoice_id):
     conn = get_connection()
     cur = conn.cursor()
