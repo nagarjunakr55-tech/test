@@ -594,20 +594,15 @@ def create_app() -> Flask:
         if not items:
             return jsonify({"ok": False, "error": "empty_cart"}), 400
 
-        # Existing totals calculation
-        totals = calculate_totals(items, data.get("discount", ""))
+        # Allowed global discount codes are enforced in calculate_totals
+        try:
+            totals = calculate_totals(items, data.get("discount", ""))
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
         items_for_receipt = totals.get("items_effective", items)
-
-        # --- NEW: Allow override total from frontend popup ---
-        override_total = data.get("override_grand_total") or data.get("charge_amount")
-        if override_total:
-            try:
-                totals["grand_total"] = float(override_total)
-            except Exception:
-                pass  # fallback to calculated total
-
-        requested_redeem = int(data.get("redeem_points") or 0)
         is_preview = bool(data.get("preview"))
+        requested_redeem = int(data.get("redeem_points") or 0)
 
         if is_preview:
             use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
@@ -630,11 +625,10 @@ def create_app() -> Flask:
             )
             return jsonify({"ok": True, "invoice_text": invoice_text})
 
-        # ---------- SAVE ----------
+        # ---------- PRINT/SAVE ----------
         async_save = bool(data.get("async"))
         invoice_id = generate_unique_invoice_id()
 
-        # Loyalty based on override grand total
         used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
             phone=phone,
             grand_total=float(totals["grand_total"]),
@@ -648,13 +642,58 @@ def create_app() -> Flask:
             items=items_for_receipt,
             subtotal=totals["subtotal"],
             gst_amount=totals["gst"],
-            grand_total=float(totals["grand_total"]),  # <== use override total
+            grand_total=final_payable,
             discount_amt=totals["discount_amt"],
             points_used=used_pts,
             points_earned=earned_pts,
             points_balance=new_balance
         )
 
+        if async_save:
+            # Cache for printer
+            try:
+                _cache_put(invoice_id, invoice_text)
+            except Exception:
+                pass
+
+            def _persist():
+                try:
+                    # Save invoice body
+                    save_to_db(
+                        invoice_id=invoice_id,
+                        name=cust_name,
+                        phone=phone,
+                        items=items_for_receipt,
+                        subtotal=totals["subtotal"],
+                        discount_amt=totals["discount_amt"],
+                        gst_amt=totals["gst"],
+                        grand_total=final_payable,
+                        invoice_text=invoice_text
+                    )
+                    # Store loyalty fields into sales_history for async repair visibility
+                    with get_connection() as conn2, conn2.cursor() as cur2:
+                        cur2.execute("""
+                            UPDATE public.sales_history
+                               SET points_earned=%s,
+                                   points_redeemed=%s,
+                                   points_synced_at=NOW()
+                             WHERE invoice_id=%s
+                        """, (earned_pts, used_pts, invoice_id))
+                        conn2.commit()
+                except Exception:
+                    pass
+
+            Thread(target=_persist, daemon=True).start()
+            return jsonify({
+                "ok": True,
+                "invoice_id": invoice_id,
+                "invoice_text": invoice_text,
+                "points_used": used_pts,
+                "points_earned": earned_pts,
+                "points_balance": new_balance
+            })
+
+        # Sync save
         save_to_db(
             invoice_id=invoice_id,
             name=cust_name,
@@ -663,11 +702,10 @@ def create_app() -> Flask:
             subtotal=totals["subtotal"],
             discount_amt=totals["discount_amt"],
             gst_amt=totals["gst"],
-            grand_total=float(totals["grand_total"]),  # <== use override total
+            grand_total=final_payable,
             invoice_text=invoice_text
         )
-
-        # Update loyalty columns
+        # Update loyalty fields
         with get_connection() as conn2, conn2.cursor() as cur2:
             cur2.execute("""
                 UPDATE public.sales_history
@@ -686,7 +724,6 @@ def create_app() -> Flask:
             "points_earned": earned_pts,
             "points_balance": new_balance
         })
-
 
     # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")
