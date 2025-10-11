@@ -600,46 +600,7 @@ def create_app() -> Flask:
         except ValueError as e:
             # propagate a clean error to the UI (no 500s)
             return jsonify({"ok": False, "error": str(e)}), 400
-        from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-        import re
 
-        def _to_rupees_int(x):
-            try:
-                return int(Decimal(str(x)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            except Exception:
-                return None
-
-        original_final = _to_rupees_int(totals.get("grand_total", 0)) or 0
-
-        override_total = data.get("override_grand_total", None)
-        if override_total is not None:
-            eff = _to_rupees_int(override_total)
-            if eff is None or eff < 0:
-                return jsonify({"ok": False, "error": "Invalid override amount"}), 400
-            effective_final = eff
-        else:
-            effective_final = original_final
-
-        # Use Decimal to avoid float drift
-        saved_delta = int(
-            (Decimal(original_final) - Decimal(effective_final)).max(Decimal(0))
-        )
-
-        # Regex-based safe injector
-        _saved_regex = re.compile(r"(?mi)^\s*Saved\b")
-        _total_regex = re.compile(r"(?mi)^\s*(Grand\s+Total|Total)\b")
-
-        def _inject_saved_line(inv_text: str, saved_amt: int) -> str:
-            if not inv_text or saved_amt <= 0:
-                return inv_text
-            if _saved_regex.search(inv_text):
-                return inv_text
-            m = _total_regex.search(inv_text)
-            if not m:
-                return inv_text
-            start = m.start()
-            return inv_text[:start] + f"\nSaved ₹{saved_amt}\n" + inv_text[start:]
-        
         items_for_receipt = totals.get("items_effective", items)
         requested_redeem = int(data.get("redeem_points") or 0)
         is_preview = bool(data.get("preview"))
@@ -666,18 +627,6 @@ def create_app() -> Flask:
 
         saved_delta = max(0, original_final - effective_final)
 
-        # Helper to inject "Saved ₹X" above the Total line in invoice text
-        def _inject_saved_line(inv_text: str, saved_amt: int) -> str:
-            if not inv_text or saved_amt <= 0:
-                return inv_text
-            # Try to insert just before the first "Total" label
-            # We handle both "Total:" and "Grand Total:" styles conservatively
-            for marker in ["\nTotal", "\nGrand Total", "\nTOTAL", "\nGrand total", "\nGrand total"]:
-                pos = inv_text.find(marker)
-                if pos != -1:
-                    return inv_text[:pos] + f"\nSaved ₹{saved_amt}" + inv_text[pos:]
-            # Fallback: append at end
-            return inv_text.rstrip() + f"\nSaved ₹{saved_amt}\n"
 
         # 3) PREVIEW: simulate loyalty on the effective_final
         if is_preview:
@@ -700,9 +649,6 @@ def create_app() -> Flask:
                 points_earned=earn_p,
                 points_balance=bal_p
             )
-
-            # If override lowered the bill, show "Saved ₹X"
-            invoice_text = _inject_saved_line(invoice_text, saved_delta)
 
             return jsonify({
                 "ok": True,
@@ -735,9 +681,6 @@ def create_app() -> Flask:
             points_earned=earned_pts,
             points_balance=new_balance
         )
-
-        # If override lowered the bill, show "Saved ₹X"
-        invoice_text = _inject_saved_line(invoice_text, saved_delta)
 
         if async_save:
             # Cache for printer
