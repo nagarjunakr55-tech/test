@@ -594,57 +594,59 @@ def create_app() -> Flask:
         if not items:
             return jsonify({"ok": False, "error": "empty_cart"}), 400
 
-        # 1) Calculate regular totals (this enforces discount rules)
+        # 1) Calculate standard totals (enforces per-row/global discount rules)
         try:
             totals = calculate_totals(items, data.get("discount", ""))
         except ValueError as e:
-            # propagate a clean error to the UI (no 500s)
             return jsonify({"ok": False, "error": str(e)}), 400
 
         items_for_receipt = totals.get("items_effective", items)
         requested_redeem = int(data.get("redeem_points") or 0)
         is_preview = bool(data.get("preview"))
 
-        # 2) Authoritative override (what the cashier typed)
-        #    Use this everywhere: preview text, saved history, SMS, points.
-        override_total = data.get("override_grand_total", None)
+        # ---------- Authoritative override handling ----------
+        from decimal import Decimal, ROUND_HALF_UP
+        import re
 
-        def _coerce_rupees(x):
+        def _rupees_int(x):
+            """Round any number/str to integer rupees (banker-friendly)."""
             try:
-                # allow strings/floats; round to integer rupees
-                return max(0, int(round(float(str(x).strip()))))
+                return int(Decimal(str(x)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             except Exception:
                 return None
 
-        original_final = int(round(float(totals.get("grand_total", 0))))
-        effective_final = original_final
+        original_final = _rupees_int(totals.get("grand_total", 0)) or 0
 
+        override_total = data.get("override_grand_total", None)
         if override_total is not None:
-            coerced = _coerce_rupees(override_total)
-            if coerced is None:
+            eff = _rupees_int(override_total)
+            if eff is None or eff < 0:
                 return jsonify({"ok": False, "error": "Invalid override amount"}), 400
-            effective_final = coerced
+            effective_final = eff
+        else:
+            effective_final = original_final
 
         saved_delta = max(0, original_final - effective_final)
 
-        # Helper to inject "Saved ₹X" above the Total line in invoice text
+        # Put "Saved ₹X" just above the first Total/Grand Total line (once)
+        _saved_regex = re.compile(r"(?mi)^\s*Saved\b")
+        _total_regex = re.compile(r"(?mi)^\s*(Grand\s+Total|Total)\b")
+
         def _inject_saved_line(inv_text: str, saved_amt: int) -> str:
             if not inv_text or saved_amt <= 0:
                 return inv_text
-            # Try to insert just before the first "Total" label
-            # We handle both "Total:" and "Grand Total:" styles conservatively
-            for marker in ["\nTotal", "\nGrand Total", "\nTOTAL", "\nGrand total", "\nGrand total"]:
-                pos = inv_text.find(marker)
-                if pos != -1:
-                    return inv_text[:pos] + f"\nSaved ₹{saved_amt}" + inv_text[pos:]
-            # Fallback: append at end
-            return inv_text.rstrip() + f"\nSaved ₹{saved_amt}\n"
+            if _saved_regex.search(inv_text):
+                return inv_text
+            m = _total_regex.search(inv_text)
+            if not m:
+                return inv_text
+            return inv_text[:m.start()] + f"\nSaved ₹{saved_amt}\n" + inv_text[m.start():]
 
-        # 3) PREVIEW: simulate loyalty on the effective_final
+        # ---------- PREVIEW ----------
         if is_preview:
             use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
                 phone=phone,
-                grand_total=float(effective_final),
+                grand_total=float(effective_final),   # use authoritative override here
                 requested_redeem=requested_redeem
             )
 
@@ -655,14 +657,12 @@ def create_app() -> Flask:
                 items=items_for_receipt,
                 subtotal=totals["subtotal"],
                 gst_amount=totals["gst"],
-                grand_total=final_after,
+                grand_total=final_after,              # after redeem in preview
                 discount_amt=totals["discount_amt"],
                 points_used=use_p,
                 points_earned=earn_p,
                 points_balance=bal_p
             )
-
-            # If override lowered the bill, show "Saved ₹X"
             invoice_text = _inject_saved_line(invoice_text, saved_delta)
 
             return jsonify({
@@ -673,13 +673,13 @@ def create_app() -> Flask:
                 "points_balance": bal_p
             })
 
-        # 4) FINALIZE: commit loyalty based on the effective_final and save
+        # ---------- FINALIZE (save + print) ----------
         async_save = bool(data.get("async"))
         invoice_id = generate_unique_invoice_id()
 
         used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
             phone=phone,
-            grand_total=float(effective_final),
+            grand_total=float(effective_final),       # use authoritative override here
             requested_redeem=requested_redeem
         )
 
@@ -690,18 +690,16 @@ def create_app() -> Flask:
             items=items_for_receipt,
             subtotal=totals["subtotal"],
             gst_amount=totals["gst"],
-            grand_total=final_payable,
+            grand_total=final_payable,                # after redeem
             discount_amt=totals["discount_amt"],
             points_used=used_pts,
             points_earned=earned_pts,
             points_balance=new_balance
         )
-
-        # If override lowered the bill, show "Saved ₹X"
         invoice_text = _inject_saved_line(invoice_text, saved_delta)
 
         if async_save:
-            # Cache for printer
+            # Cache for printer quickly
             try:
                 _cache_put(invoice_id, invoice_text)
             except Exception:
@@ -717,10 +715,10 @@ def create_app() -> Flask:
                         subtotal=totals["subtotal"],
                         discount_amt=totals["discount_amt"],
                         gst_amt=totals["gst"],
-                        grand_total=final_payable,  # <= authoritative amount (after redeem)
+                        grand_total=final_payable,     # authoritative amount saved
                         invoice_text=invoice_text
                     )
-                    # Write loyalty fields for visibility; mark synced
+                    # Persist loyalty fields for visibility; mark synced
                     with get_connection() as conn2, conn2.cursor() as cur2:
                         cur2.execute("""
                             UPDATE public.sales_history
@@ -734,6 +732,7 @@ def create_app() -> Flask:
                     pass
 
             Thread(target=_persist, daemon=True).start()
+
             return jsonify({
                 "ok": True,
                 "invoice_id": invoice_id,
@@ -752,7 +751,7 @@ def create_app() -> Flask:
             subtotal=totals["subtotal"],
             discount_amt=totals["discount_amt"],
             gst_amt=totals["gst"],
-            grand_total=final_payable,  # <= authoritative amount (after redeem)
+            grand_total=final_payable,                 # authoritative amount saved
             invoice_text=invoice_text
         )
         with get_connection() as conn2, conn2.cursor() as cur2:
@@ -773,6 +772,7 @@ def create_app() -> Flask:
             "points_earned": earned_pts,
             "points_balance": new_balance
         })
+
 
 
 
