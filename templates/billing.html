@@ -59,15 +59,13 @@
   });
   const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
   function round0(n){ return Math.round(Number(n || 0)); }
-  function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
+function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 
-  /* Min profit floor used by the Floor button */
-  const MIN_PROFIT = 100;
+/* Min profit floor used by the Floor button */
+const MIN_PROFIT = 100;
 </script>
 
 <style>
-  #loyaltyPanel .nowrap { white-space: nowrap; }
-
   .sp-input{
     width: 6ch;
     max-width: 6ch;
@@ -83,7 +81,7 @@
     color: transparent;
     opacity: 0;
     cursor: pointer;
-    width: 40px;
+    width: 40px;  /* give it some hit area */
     height: 24px;
   }
   .floor-btn {
@@ -92,7 +90,7 @@
     color: transparent;
     opacity: 0;
     cursor: pointer;
-    width: 40px;
+    width: 40px;  /* give it some hit area */
     height: 24px;
   }
 
@@ -112,10 +110,6 @@
   .disc-input::-webkit-outer-spin-button,
   .disc-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .disc-input[type=number] { -moz-appearance: textfield; }
-
-  /* Modal input – tidy on mobile */
-  #manualTotalInput::-webkit-outer-spin-button,
-  #manualTotalInput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
 
 <!-- Search modal -->
@@ -192,30 +186,6 @@
   </button>
 </div>
 
-<!-- Loyalty panel -->
-<div id="loyaltyPanel" class="row" style="margin-top:10px; align-items:center; gap:10px; display:flex;">
-  <span id="lpAvail" title="Available points">Available: 0</span>
-  <span id="lpEarnPreview" title="Estimated points you’ll earn on this bill">(Earn: 0)</span>
-  <input id="lpRedeem" type="text" inputmode="numeric" pattern="\d*" maxlength="3" style="width:3.5ch; text-align:right; padding:4px;">
-  <button id="lpApply" type="button" style="background:#00695c;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">Apply</button>
-</div>
-
-<!-- Manual Total Modal (POP) -->
-<div id="manualTotalModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2000;">
-  <div style="background:#fff; margin:18vh auto; padding:14px; width:320px; box-shadow:0 10px 30px rgba(0,0,0,.25); border-radius:8px;">
-    <h4 style="margin-top:0;">Set Final Amount</h4>
-    <p style="margin:.5em 0 1em 0; opacity:.8;">Enter the amount to charge as the final bill (₹):</p>
-    <div class="row" style="gap:8px; align-items:center;">
-      <span>₹</span>
-      <input id="manualTotalInput" type="text" inputmode="numeric" pattern="\\d*" maxlength="7" style="flex:1; text-align:right; padding:6px; border:1px solid #ddd;">
-    </div>
-    <div class="row" style="margin-top:12px; justify-content:flex-end; gap:8px;">
-      <button id="manualTotalCancel" type="button">Cancel</button>
-      <button id="manualTotalOk" type="button" style="background:#4caf50;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">Use this total</button>
-    </div>
-  </div>
-</div>
-
 <!-- Invoice preview -->
 <h3 style="margin-top:12px;">Invoice Preview</h3>
 <pre id="invoicePreview" style="background:#fff;"></pre>
@@ -270,55 +240,15 @@ refreshSizes();
 let cart = [];
 let subtotal = 0, finalTotal = 0;
 // Preview/save state
-let appliedDiscount = "";  // "NN" numeric string (no %)
+let appliedDiscount = "";  // "NN%" (only % supported in UI)
 let lastPayload = null;    // built on Proceed (preview only)
-let lastInvoiceId = null;  // set only after SAVE
+let lastInvoiceId = null;  // set only after SAVE (Android print)
 let lastInvoiceText = "";  // preview text
 // persistence
 const KEY_CART  = "drip_cart_v1";
-const KEY_DISC  = "[REDACTED_GENERIC_API_KEY_1]";
+const KEY_DISC  = "drip_discount_v1";
 const KEY_NAME  = "drip_name_v1";
 const KEY_PHONE = "drip_phone_v1";
-// Loyalty state
-let lpAvailable = 0;   // fetched from backend
-let lpCap       = 100; // fetched from backend; default 100
-let lpRate      = 2;   // points per ₹100; backend can override
-let lpRedeem    = 0;   // user-applied this bill
-
-function lpClampRedeem(raw) {
-  const n = Math.max(0, Math.floor(Number(raw || 0)));
-  return Math.min(n, lpAvailable, lpCap);
-}
-
-function lpEstimatedEarn(finalAmt) {
-  const base = Math.max(0, Math.round(Number(finalAmt || 0)));
-  return Math.floor(base / 100) * lpRate; // e.g., ₹600 -> 12 when lpRate=2
-}
-
-function lpRefreshUI() {
-  document.getElementById('lpAvail').textContent = `Available: ${lpAvailable}`;
-  const earn = lpEstimatedEarn(finalTotal);
-  document.getElementById('lpEarnPreview').textContent = `(Earn ₹${earn})`;
-  document.getElementById('lpRedeem').value = lpRedeem ? String(lpRedeem) : '';
-}
-async function fetchAndSetLoyalty(phone){
-  try {
-    const r = await fetch(`/api/loyalty_points?phone=${encodeURIComponent(phone)}`);
-    const j = await r.json();
-    if (j && j.ok) {
-      lpAvailable = Number(j.points || 0);
-      lpCap       = Number(j.cap || 100);
-      lpRate      = Number(j.rate_per_100 || lpRate);
-    } else {
-      lpAvailable = 0;
-    }
-  } catch {
-    lpAvailable = 0;
-  }
-  recalc();
-  lpRefreshUI();
-}
-
 function persistState() {
   try {
     localStorage.setItem(KEY_CART, JSON.stringify(cart));
@@ -348,14 +278,18 @@ function restoreState() {
    Helpers
    ========= */
 function sameKey(a,b){
+  // If either has a barcode, require same code. Different codes must not merge.
   if ((a.code || b.code) && a.code !== b.code) return false;
   return a.brand===b.brand && a.category===b.category && a.size===b.size && Number(a.price)==Number(b.price);
 }
 function upsertCartItem(newItem){
+  // ensure per-row discount key exists and persists
+  if (typeof newItem.disc_pct !== 'number') newItem.disc_pct = 0;
+
   const i = cart.findIndex(it => sameKey(it, newItem));
   if (i >= 0) {
     cart[i].qty = Number(cart[i].qty) + Number(newItem.qty||1);
-    if (!cart[i].code && newItem.code) cart[i].code = newItem.code;
+    if (!cart[i].code && newItem.code) cart[i].code = newItem.code; // keep code if present
   } else {
     cart.push(newItem);
   }
@@ -380,26 +314,32 @@ function invalidateCheckout() {
   const btn = document.getElementById('btnProceed');
   btn.disabled = false;
   btn.textContent = 'Proceed';
-  window.__reservedInvoiceId = null;
-
 }
+
 function globalPct(){
-  const raw = (appliedDiscount || '').trim();
-  if (!raw) return 0;
-  const v = parseFloat(raw);
-  return isNaN(v) ? 0 : Math.max(0, v);
+  if (!appliedDiscount) return 0;
+  if (/%\s*$/.test(appliedDiscount)) {
+    const pct = parseFloat(appliedDiscount);
+    return isNaN(pct) ? 0 : Math.max(0, pct);
+  }
+  return 0;
 }
 
 /* =========
    Totals
    ========= */
 function recalc() {
-  let gPct = globalPct();
+  // Global percent (like "10%") – only applies to rows WITHOUT per-row discount
+  let gPct = 0;
+  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
+    const p = parseFloat(appliedDiscount);
+    gPct = isNaN(p) ? 0 : Math.max(0, p);
+  }
 
-  let subtotalBase = 0;
-  let subtotalAfterRows = 0;
-  let eligibleForGlobal = 0;
-  let boughtTotal = 0;
+  let subtotalBase = 0;        // base SP * qty (shown as "Total")
+  let subtotalAfterRows = 0;   // after applying per-row discounts
+  let eligibleForGlobal = 0;   // only rows with no per-row discount
+  let boughtTotal = 0;         // guard baseline
 
   for (const it of cart) {
     const qty        = Number(it.qty || 0);
@@ -420,29 +360,26 @@ function recalc() {
     subtotalAfterRows += unitAfterRows * qty;
   }
 
+  // apply global to the eligible portion only
   let globalDiscAmt = 0;
-  if (gPct > 0) globalDiscAmt = eligibleForGlobal * (gPct/100);
+  if (gPct > 0) {
+    globalDiscAmt = eligibleForGlobal * (gPct/100);
+  }
 
   const finalCandidate = subtotalAfterRows - globalDiscAmt;
 
+  // Guard: do not allow below bought + 100 (drop ONLY global if violated)
   let finalTotalLocal = finalCandidate;
   if (finalCandidate < (boughtTotal + 100)) {
     globalDiscAmt = 0;
     finalTotalLocal = subtotalAfterRows;
   }
 
-  finalTotal = Math.max(0, finalTotalLocal);
   subtotal   = subtotalBase;
-  let finalBeforeRedeem = Math.max(0, finalTotalLocal);
-
-  const maxRedeemThisBill = Math.min(lpAvailable, lpCap);
-  const appliedRedeem = Math.min(lpRedeem, maxRedeemThisBill, Math.floor(finalBeforeRedeem));
-  finalTotal = Math.max(0, finalBeforeRedeem - appliedRedeem);
+  finalTotal = Math.max(0, finalTotalLocal);
 
   document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
-
-  lpRefreshUI();
 }
 
 /* =================
@@ -452,13 +389,19 @@ function renderCart() {
   const tb = document.querySelector('#cartTable tbody');
   tb.innerHTML = '';
 
-  let gPct = globalPct();
+  // global fallback
+  let gPct = 0;
+  if (appliedDiscount && /%\s*$/.test(appliedDiscount)) {
+    const p = parseFloat(appliedDiscount);
+    gPct = isNaN(p) ? 0 : Math.max(0, p);
+  }
 
   cart.forEach((it, idx) => {
     const base   = Number(it.price || 0);
     const rowPct = Number(it.disc_pct || 0);
     const effPct = rowPct > 0 ? rowPct : gPct;
 
+    // Rounded display values
     const baseR  = round0(base);
     const afterR = effPct ? round0(base * (1 - effPct/100)) : baseR;
 
@@ -476,10 +419,13 @@ function renderCart() {
     const discCell =
   `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
      <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
-            inputmode="numeric" pattern="\\d*" value="${(it.disc_pct ? Number(it.disc_pct) : '')}">
+            inputmode="numeric" pattern="\\d*" value="${Number(it.disc_pct||0)}">
      <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
-     <button type="button" class="floor-btn"  data-i="${idx}" title="Set to bought+${MIN_PROFIT}">Floor</button>
+     <button type="button" class="floor-btn"  data-i="${idx}" title="Set to bought+${MIN_PROFIT}">
+       Floor
+     </button>
    </div>`;
+
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -503,7 +449,6 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
-
 /* =================
    Floor price button (per-row)
    ================= */
@@ -514,22 +459,27 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   const i = +btn.dataset.i;
   if (Number.isNaN(i) || !cart[i]) return;
 
-  const base   = Number(cart[i].price || 0);
+  const base   = Number(cart[i].price || 0);          // current base selling price (before discounts)
   const bought = Number(cart[i].bought_price || 0);
-  const floor  = round0(bought + MIN_PROFIT);
+  const floor  = round0(bought + MIN_PROFIT);         // desired after-price
 
   if (base <= 0) { alert('Invalid base price'); return; }
 
+  // If floor >= base, we cannot "discount up". In that case, clear discount (sell at base).
   if (floor >= round0(base)) {
     cart[i].disc_pct = 0;
+    // Optional: inform the user
+    // alert(`Base price (${round0(base)}) is at/below floor (${floor}). Selling at base.`);
     renderCart();
     return;
   }
 
+  // Compute discount% so that after-price becomes exactly the floor price
   const pct = (1 - (floor / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;   // keep 2 decimals
   renderCart();
 });
+
 
 /* =================
    Qty & remove controls
@@ -551,9 +501,12 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
 });
 
 /* =================
-   Per-row discount
+   Per-row discount (Apply button)
    ================= */
-const ALLOWED_CODES = new Set([0,10,15,20,25,30,35]);
+// Allowed discount codes (same as global)
+const ALLOWED_CODES = new Set([0,10, 15, 20, 25, 30, 35]);
+
+// Per-row "Apply" works like global Discount button
 document.querySelector('#cartTable').addEventListener('click', (e) => {
   const btn = e.target.closest('button.disc-apply');
   if (!btn) return;
@@ -564,21 +517,26 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
   let raw = (input?.value || '').trim();
 
+  // Blank -> clear row discount and re-render
   if (raw === '') {
     cart[i].disc_pct = 0;
     renderCart();
     return;
   }
 
+  // Accept "10" or "10%"
   if (raw.endsWith('%')) raw = raw.slice(0, -1);
   const pct = Number(raw);
 
+  // Validate against allowed codes (exact match)
   if (!ALLOWED_CODES.has(pct)) {
     alert('Invalid Code');
-    input.focus(); input.select();
+    input.focus();
+    input.select();
     return;
   }
 
+  // Safety guard (same rule you use elsewhere)
   const unitSell   = Number(cart[i].price || 0);
   const unitBought = Number(cart[i].bought_price || 0);
   const unitAfter  = unitSell * (1 - pct / 100);
@@ -588,13 +546,18 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
     return;
   }
 
+  // ✅ Apply per-row discount (overrides any global)
   cart[i].disc_pct = pct;
+
+  // Optional: normalize the input box to "NN"
   input.value = String(pct);
+
   renderCart();
 });
 
+
 /* =================
-   Admin after-price edits
+   Admin edits: after-price -> compute discount%
    ================= */
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('sp-input')) return;
@@ -602,17 +565,22 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
 
-  const base   = Number(cart[i].price || 0);
+  const base   = Number(cart[i].price || 0);          // immutable base SP
   const bought = Number(cart[i].bought_price || 0);
   const raw    = parseFloat(e.target.value);
-  const afterInput = round0(isNaN(raw) ? 0 : raw);
-  e.target.value = afterInput;
+  const afterInput = round0(isNaN(raw) ? 0 : raw);     // round to whole
+  e.target.value = afterInput;                         // reflect rounding
 
+  // current effective after for revert
   const currentPct   = Number(cart[i].disc_pct || 0);
   const currentAfter = currentPct > 0 ? round0(base * (1 - currentPct/100)) : round0(base);
 
-  if (afterInput <= 0) { e.target.value = currentAfter; return; }
+  if (afterInput <= 0) {
+    e.target.value = currentAfter;
+    return;
+  }
 
+  // No discount if admin sets >= base
   if (afterInput >= round0(base)) {
     cart[i].disc_pct = 0;
     e.target.value = round0(base);
@@ -620,39 +588,37 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
     return;
   }
 
+  // Guard
   if (afterInput < (round0(bought) + 100)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
     e.target.value = currentAfter;
     return;
   }
 
+  // compute % from base → after
   const pct = (1 - (afterInput / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;  // keep 2 decimals for % value
   renderCart();
 });
 
 /* =================
-   Keep per-row % tidy
+   keep per-row % input tidy
    ================= */
 document.querySelector('#cartTable').addEventListener('change', (e)=>{
   if (!e.target.classList.contains('disc-input')) return;
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
-
-  const raw = (e.target.value ?? '').trim();
-  if (raw === '') return;
-
-  let v = parseFloat(raw);
-  if (isNaN(v) || v < 0) v = 0;
-  e.target.value = String(v);
+  const v = parseFloat(e.target.value);
+  e.target.value = isNaN(v) || v < 0 ? 0 : v;
 });
 
 /* =================
-   Global Discount
+   Global Discount button
    ================= */
 document.getElementById('applyDiscount').addEventListener('click', ()=>{
   let raw = (document.getElementById('discount').value || '').trim();
 
+  // clear global discount
   if (!raw){
     appliedDiscount = "";
     renderCart();
@@ -661,10 +627,12 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     return;
   }
 
+  // percent only (allowed set)
   let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
 
+  // Guard for all rows (respecting row overrides)
   for (const it of cart) {
     const rowPct = Number(it.disc_pct||0);
     const usePct = rowPct > 0 ? rowPct : pct;
@@ -677,9 +645,7 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
     }
   }
 
-  appliedDiscount = String(pct);
-  document.getElementById('discount').value = String(pct);
-
+  appliedDiscount = `${pct}%`;
   renderCart();
   invalidateCheckout();
   persistState();
@@ -709,13 +675,14 @@ async function addBarcode() {
     });
     const j = await r.json();
     if (!j.ok) { alert('Barcode not found'); return; }
+    // coerce prices to whole numbers
     const item = {
       ...j.item,
       mrp_price: round0(j.item.mrp_price),
       price:     round0(j.item.price),
       bought_price: Number(j.item.bought_price || 0),
       qty: Number(j.item.qty || 1),
-      disc_pct: undefined
+      disc_pct: 0
     };
     upsertCartItem(item);
   } catch { alert('Network error'); }
@@ -733,7 +700,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   const size = document.getElementById('mSize').value;
   const category = document.getElementById('mCategory').value;
   if (!brand || !price) { alert('Enter brand and price'); return; }
-  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: undefined });
+  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: 0 });
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 
@@ -754,7 +721,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
     const row = document.createElement('div'); row.style.borderBottom='1px solid #eee'; row.style.padding='6px';
     row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${mrpR} | Price: ${priceR} <button>Add</button>`;
     row.querySelector('button').addEventListener('click', ()=> 
-      upsertCartItem({...it, qty:1, disc_pct: undefined, mrp_price: mrpR, price: priceR})
+      upsertCartItem({...it, qty:1, disc_pct: 0, mrp_price: mrpR, price: priceR})
     );
     box.appendChild(row);
   });
@@ -764,36 +731,15 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
    Autofill name by phone #
    ========================== */
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
-  const ph = e.target.value.replace(/\D/g,'').slice(0,10);
-  e.target.value = ph;
-
+  const ph = e.target.value.replace(/\D/g,'').slice(0,10); e.target.value = ph;
   if (ph.length === 10) {
-    try {
-      const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
-      const j = await r.json();
-      if (j.ok && j.name) document.getElementById('custName').value = j.name;
-    } catch {}
-
-    lpRedeem = 0;
-    await fetchAndSetLoyalty(ph);
+    const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
+    const j = await r.json(); if (j.ok && j.name) document.getElementById('custName').value = j.name;
   }
-
   invalidateCheckout();
   persistState();
 });
 document.getElementById('custName').addEventListener('input', ()=>{ invalidateCheckout(); persistState(); });
-
-/* Loyalty: Apply/Remove */
-document.getElementById('lpApply').addEventListener('click', () => {
-  const raw = document.getElementById('lpRedeem').value;
-  lpRedeem = lpClampRedeem(raw);
-  recalc();
-  lpRefreshUI();
-  invalidateCheckout();
-});
-document.getElementById('lpRedeem').addEventListener('input', (e) => {
-  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
-});
 
 /* ==========================
    Proceed / Print / Clear
@@ -814,14 +760,13 @@ proceedBtn.addEventListener('click', async ()=>{
         code: (i.code || ""),
         brand: i.brand, category: i.category, size: i.size,
         qty: Number(i.qty||0),
-        mrp_price: round0(i.mrp_price||0),
+        mrp_price: round0(i.mrp_price||0),     // rounded outbound
         bought_price: Number(i.bought_price||0),
-        price: round0(i.price||0),
+        price: round0(i.price||0),             // rounded outbound
         disc_pct: Number(i.disc_pct||0)
       })),
       discount: appliedDiscount,
-      redeem_points: Number(lpRedeem || 0),
-      preview: true
+      preview: true // do NOT save
     };
     const res = await fetch('{{ url_for("api_checkout") }}', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
@@ -839,187 +784,74 @@ proceedBtn.addEventListener('click', async ()=>{
   }
 });
 
-/* Optional desktop print preview */
+// Guard the (optional) btnPrint handler
 const btnPrintEl = document.getElementById('btnPrint');
 if (btnPrintEl) {
   btnPrintEl.addEventListener('click', (e)=>{
     if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
-    window.print();
+    window.print(); // preview only, no save
   });
 }
 
-/* SMS text */
-function buildSmsText(name, amt, earned = 0) {
-  return (
-    `Hi ${name},\n\n` +
-    `Your bill is Rs ${amt}.\n` +
-    (earned > 0 ? `Earned Rs ${earned}\n\n` : `\n`) +
-    `Follow us on:\n` +
-    `WhatsApp: https://t.ly/hcWjm\n` +
-    `Insta: https://t.ly/CGh_x\n\n` +
-    `Thanks for shopping with DRIP Fashions!`
-  );
-}
-
-/* === POP: Manual final amount flow === */
-let manualOverrideTotal = null;
-
-function openManualTotalModal(defaultValue) {
-  const modal = document.getElementById('manualTotalModal');
-  const input = document.getElementById('manualTotalInput');
-  input.value = String(Math.max(0, Math.round(Number(defaultValue || 0))));
-  modal.style.display = 'block';
-  setTimeout(()=>input.focus(), 0);
-}
-function closeManualTotalModal() {
-  document.getElementById('manualTotalModal').style.display = 'none';
-}
-document.getElementById('manualTotalInput').addEventListener('input', (e)=>{
-  e.target.value = e.target.value.replace(/\D/g,'').slice(0,7);
-});
-document.getElementById('manualTotalCancel').addEventListener('click', ()=>{
-  manualOverrideTotal = null;
-  closeManualTotalModal();
-});
-document.getElementById('manualTotalOk').addEventListener('click', ()=>{
-  const raw = document.getElementById('manualTotalInput').value.trim();
-  if (!raw) { alert('Please enter an amount'); return; }
-  const val = Math.max(0, Math.round(Number(raw)));
-  if (!Number.isFinite(val) || val <= 0) { alert('Invalid amount'); return; }
-  manualOverrideTotal = val;
-  closeManualTotalModal();
-  doAndroidPrintWithOverride(val);
-});
-
-/* Single handler for Android Print -> opens POP */
-const _printBtn = document.getElementById('btnAndroidPrint');
-_printBtn.addEventListener('click', (e)=>{
+document.getElementById('btnAndroidPrint').addEventListener('click', async (e)=>{
   e.preventDefault();
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
-  openManualTotalModal(finalTotal); // pre-fill with computed final
-}, true); // capture, so no other handler can run before this
-
-/* Save/print using EXACT override amount everywhere */
-async function doAndroidPrintWithOverride(useTotal){
-  if (!lastPayload) { alert('Please click Proceed first.'); return; }
-
-  const btn = document.getElementById('btnAndroidPrint');
-  if (btn.disabled) return;
-
-  // 1) pick the reserved id (or reserve now as a fallback)
-  let useInvoiceId = window.__reservedInvoiceId;
-  if (!useInvoiceId) {
-    try {
-      const r = await fetch('/api/checkout_prepare', { method:'POST', credentials:'same-origin' });
-      const j = await r.json();
-      if (j && j.ok && j.invoice_id) useInvoiceId = j.invoice_id;
-    } catch {}
-  }
-  if (!useInvoiceId) { alert('Could not prepare printer. Try again.'); return; }
-
-  // 2) Update UI immediately to reflect the chosen amount
-  document.getElementById('finalLbl').textContent = 'Final: ' + money(useTotal);
-
-  const base  = window.location.origin;
-  const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
-  const phone = (document.getElementById('custPhone').value || '').trim();
-
-  // Estimated points (server will recalc when we save)
-  const estEarned = lpEstimatedEarn(useTotal);
-  const smsText = buildSmsText(name, useTotal, estEarned);
-
-  // 3) LAUNCH PRINT IMMEDIATELY (don’t wait for save)
-  const schemeUrl =
-    `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(useInvoiceId)}` +
-    `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
-  try { window.location.href = schemeUrl; } catch {}
-
-  const intentUrl =
-    `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(useInvoiceId)}` +
-    `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
-    `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + useInvoiceId)};end`;
-  setTimeout(()=>{ try { window.location.replace(intentUrl); } catch {} }, 250);
-  setTimeout(()=>{ try { window.location.href = base + '/reprint/' + useInvoiceId; } catch {} }, 1500);
-
-  // 4) Save IN THE BACKGROUND with the same id + override
-  btn.disabled = true;
-  const old = btn.textContent;
-  btn.textContent = 'Saving…';
-
-  const toSave = {
-    ...lastPayload,
-    preview: false,
-    async: true,
-    invoice_id: useInvoiceId,            // << same id as printer
-    override_grand_total: Number(useTotal),
-    charge_amount: Number(useTotal)
-  };
-
+  const toSave = {...lastPayload}; delete toSave.preview; // commit
+  const btn = e.currentTarget; btn.disabled = true; const old = btn.textContent; btn.textContent = 'Saving...';
   try {
     const res = await fetch('{{ url_for("api_checkout") }}', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(toSave),
-      credentials: 'same-origin'
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(toSave)
     });
     const j = await res.json();
-    // Even if save fails, printing already launched; we just show feedback
-    if (j && j.ok) {
-      lastInvoiceId = useInvoiceId;
-      document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
-      btn.textContent = 'Sent to printer';
-    } else {
-      btn.textContent = old;
-      btn.disabled = false;
-      alert((j && j.error) || 'Save failed. You can reprint from History.');
-    }
+    if (!j.ok) throw new Error(j.error || 'Save failed');
+    lastInvoiceId = j.invoice_id;
+    document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
+    const base = window.location.origin;
+    const dl = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}`;
+    window.location.href = dl;
+    setTimeout(() => {
+      const intent = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}#Intent;scheme=drip;package=com.drip.tsplprint;end`;
+      window.location.href = intent;
+    }, 800);
+    btn.textContent = 'Printed';
   } catch (err) {
-    btn.textContent = old;
-    btn.disabled = false;
-    alert('Network error. Printing started; you can reprint from History if needed.');
+    alert(err.message || 'Network error'); btn.textContent = old; btn.disabled = false;
   }
-}
+});
 
-
-/* ==========================
-   Clear
-   ========================== */
 document.getElementById('btnClear').addEventListener('click', ()=>{
+  // reset discount UI/state
   appliedDiscount = "";
   document.getElementById('discount').value = '';
 
+  // reset Name & Phone
   const nameEl  = document.getElementById('custName');
   const phoneEl = document.getElementById('custPhone');
   nameEl.value  = 'Guest';
-  phoneEl.value = '8106204688';
+  phoneEl.value = '9848022338';
 
+  // clear persisted values
   try {
     localStorage.removeItem(KEY_NAME);
     localStorage.removeItem(KEY_PHONE);
   } catch {}
 
+  // clear cart and re-render
   cart = [];
   renderCart();
 
+  // clear preview + flags
   document.getElementById('invoicePreview').textContent = '';
   lastInvoiceId = null; lastPayload = null; lastInvoiceText = "";
   setPrintEnabled(false);
   setAndroidPrintReady(false);
-
-  lpAvailable = 0; lpRedeem = 0;
-  lpRefreshUI();
 });
 
 /* =========
    Init
    ========= */
 (function init(){
-  restoreState();
-  renderCart();
-
-  const ph = (document.getElementById('custPhone').value || '').trim();
-  if (/^\d{10}$/.test(ph)) fetchAndSetLoyalty(ph);
-
+  restoreState(); renderCart();
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
   if (code) {
