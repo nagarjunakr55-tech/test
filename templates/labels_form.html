@@ -46,8 +46,6 @@
 .form-row a.btn { background:#7c3aed; color:#fff; }  /* purple */
 
 /* “Re-use” buttons in Recent Barcodes table */
-
-
 table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
 </style>
 
@@ -116,9 +114,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
 </form>
 
 {% if recent_rows %}
-  
-  <input type="text" id="tableSearch" placeholder="Search barcodes..."
-       style="margin:12px 0; padding:8px 12px; width:100%; max-width:200px; font-size:15px;">
+  <h3 style="margin-top:24px;">Recent Barcodes</h3>
   <table class="barcode-list">
     <thead>
   <tr>
@@ -407,15 +403,5 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
     document.getElementById("brand").focus();
   }
 })();
-// --- Table search filter ---
-document.getElementById("tableSearch")?.addEventListener("input", function () {
-  const query = this.value.toLowerCase();
-  const rows = document.querySelectorAll("table.barcode-list tbody tr");
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(query) ? "" : "none";
-  });
-});
-
 </script>
 {% endblock %}
