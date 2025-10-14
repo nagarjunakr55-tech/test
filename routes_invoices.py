@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 # -----------------------------
 
 def _ensure_sales_barcodes_table():
+     '''
     """Create sales_barcodes if it doesn't exist (idempotent)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -24,6 +25,7 @@ def _ensure_sales_barcodes_table():
                 )
             """)
         conn.commit()
+         '''
 
 def _coerce_money(val):
     if val is None:

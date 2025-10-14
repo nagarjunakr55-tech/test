@@ -3,6 +3,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from db import get_connection
 
 def ensure_user_schema():
+     '''
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -16,7 +17,7 @@ def ensure_user_schema():
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
         conn.commit()
-
+         '''
 
 def create_user(username: str, password: str, role: str = "user"):
     username = (username or "").strip()
