@@ -380,6 +380,8 @@ function invalidateCheckout() {
   const btn = document.getElementById('btnProceed');
   btn.disabled = false;
   btn.textContent = 'Proceed';
+  window.__reservedInvoiceId = null;
+
 }
 function globalPct(){
   const raw = (appliedDiscount || '').trim();
@@ -902,20 +904,55 @@ async function doAndroidPrintWithOverride(useTotal){
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
 
   const btn = document.getElementById('btnAndroidPrint');
-  const old = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
+  if (btn.disabled) return;
 
-  // Update UI immediately to reflect the chosen amount
+  // 1) pick the reserved id (or reserve now as a fallback)
+  let useInvoiceId = window.__reservedInvoiceId;
+  if (!useInvoiceId) {
+    try {
+      const r = await fetch('/api/checkout_prepare', { method:'POST', credentials:'same-origin' });
+      const j = await r.json();
+      if (j && j.ok && j.invoice_id) useInvoiceId = j.invoice_id;
+    } catch {}
+  }
+  if (!useInvoiceId) { alert('Could not prepare printer. Try again.'); return; }
+
+  // 2) Update UI immediately to reflect the chosen amount
   document.getElementById('finalLbl').textContent = 'Final: ' + money(useTotal);
 
-  // Build the payload for server so sales history matches this number
+  const base  = window.location.origin;
+  const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
+  const phone = (document.getElementById('custPhone').value || '').trim();
+
+  // Estimated points (server will recalc when we save)
+  const estEarned = lpEstimatedEarn(useTotal);
+  const smsText = buildSmsText(name, useTotal, estEarned);
+
+  // 3) LAUNCH PRINT IMMEDIATELY (don’t wait for save)
+  const schemeUrl =
+    `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(useInvoiceId)}` +
+    `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
+  try { window.location.href = schemeUrl; } catch {}
+
+  const intentUrl =
+    `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(useInvoiceId)}` +
+    `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
+    `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + useInvoiceId)};end`;
+  setTimeout(()=>{ try { window.location.replace(intentUrl); } catch {} }, 250);
+  setTimeout(()=>{ try { window.location.href = base + '/reprint/' + useInvoiceId; } catch {} }, 1500);
+
+  // 4) Save IN THE BACKGROUND with the same id + override
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'Saving…';
+
   const toSave = {
     ...lastPayload,
     preview: false,
     async: true,
-    override_grand_total: Number(useTotal), // primary flag your backend can read
-    charge_amount: Number(useTotal)         // redundant, in case your backend expects a different key
+    invoice_id: useInvoiceId,            // << same id as printer
+    override_grand_total: Number(useTotal),
+    charge_amount: Number(useTotal)
   };
 
   try {
@@ -926,43 +963,23 @@ async function doAndroidPrintWithOverride(useTotal){
       credentials: 'same-origin'
     });
     const j = await res.json();
-    if (!j.ok) throw new Error(j.error || 'Save failed');
-
-    // Ensure local invoice preview shows server text (if server respects override it will match)
-    lastInvoiceId = j.invoice_id;
-    document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
-
-    const base  = window.location.origin;
-    const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
-    const phone = (document.getElementById('custPhone').value || '').trim();
-
-    // Points: prefer server; otherwise compute from the override amount
-    const earned = (typeof j.points_earned === 'number') ? j.points_earned : lpEstimatedEarn(useTotal);
-
-    // SMS with EXACT same amount & points
-    const smsText = buildSmsText(name, useTotal, earned);
-
-    // App deep links
-    const schemeUrl =
-      `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
-      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
-    const intentUrl =
-      `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(lastInvoiceId)}` +
-      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
-      `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + lastInvoiceId)};end`;
-
-    const a = document.createElement('a');
-    a.href = schemeUrl; a.style.display='none'; document.body.appendChild(a); a.click();
-    setTimeout(()=>{ window.location.replace(intentUrl); }, 250);
-    setTimeout(()=>{ window.location.href = base + '/reprint/' + lastInvoiceId; }, 1500);
-
-    btn.textContent = 'Sent to printer';
+    // Even if save fails, printing already launched; we just show feedback
+    if (j && j.ok) {
+      lastInvoiceId = useInvoiceId;
+      document.getElementById('invoicePreview').textContent = j.invoice_text || lastInvoiceText || '';
+      btn.textContent = 'Sent to printer';
+    } else {
+      btn.textContent = old;
+      btn.disabled = false;
+      alert((j && j.error) || 'Save failed. You can reprint from History.');
+    }
   } catch (err) {
-    alert(err.message || 'Network error');
     btn.textContent = old;
     btn.disabled = false;
+    alert('Network error. Printing started; you can reprint from History if needed.');
   }
 }
+
 
 /* ==========================
    Clear

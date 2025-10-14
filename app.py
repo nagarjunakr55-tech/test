@@ -32,7 +32,7 @@ import time
 from decimal import Decimal, InvalidOperation
 
 PRINT_CACHE = {}           # { code: (invoice_text, expires_epoch) }
-PRINT_CACHE_TTL = 120      # seconds
+PRINT_CACHE_TTL = 300      # seconds
 
 def _cache_put(code: str, text: str, ttl: int = PRINT_CACHE_TTL):
     PRINT_CACHE[code] = (text, time.time() + ttl)
@@ -580,6 +580,17 @@ def create_app() -> Flask:
     # -----------------------------
     # Billing APIs: checkout (preview/save)
     # -----------------------------
+    @app.post("/api/checkout_prepare")
+    def api_checkout_prepare():
+        # Generate an ID right away and cache a tiny placeholder so the printer
+        # has *something* to fetch if it races immediately.
+        invoice_id = generate_unique_invoice_id()
+        try:
+            _cache_put(invoice_id, "Preparing receipt…")
+        except Exception:
+            pass
+        return jsonify({"ok": True, "invoice_id": invoice_id})
+
     @app.post("/api/checkout")
     def api_checkout():
         data = request.get_json(silent=True) or {}
@@ -660,7 +671,10 @@ def create_app() -> Flask:
 
         # 4) FINALIZE: commit loyalty based on the effective_final and save
         async_save = bool(data.get("async"))
-        invoice_id = generate_unique_invoice_id()
+        invoice_id = (data.get("invoice_id") or "").strip()
+        if not invoice_id:
+            invoice_id = generate_unique_invoice_id()
+
 
         used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
             phone=phone,
