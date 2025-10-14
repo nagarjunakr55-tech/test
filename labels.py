@@ -54,6 +54,7 @@ def safe_int(x) -> Optional[int]:
 
 # --- Schema bootstraps --------------------------------------------------------
 def ensure_barcode_table():
+     '''
     """Create barcode_catalog table (idempotent)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -74,9 +75,10 @@ def ensure_barcode_table():
                 """
             )
         conn.commit()
-
+         '''
 
 def ensure_print_events_table():
+     '''
     """Create barcode_print_events table (idempotent)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -92,7 +94,7 @@ def ensure_print_events_table():
                 """
             )
         conn.commit()
-
+         '''
 
 def log_print_event(code: str, copies: int, how: str):
     """Insert a print event row. Safe no-op on errors."""

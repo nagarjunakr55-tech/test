@@ -1,10 +1,9 @@
+# billing_logic.py
 from db import get_connection
 from datetime import datetime
 import json
 import random
 import string
-from typing import Tuple, List, Any
-from db import get_connection
 
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
@@ -38,6 +37,72 @@ def india_date_str(dt=None, include_time: bool = True):
     if dt is None:
         dt = ist_now()
     return dt.strftime("%d-%m-%Y %I:%M %p") if include_time else dt.strftime("%d-%m-%Y")
+
+
+# ---------------------------------
+# Bootstrap tables (Postgres)
+# ---------------------------------
+def ensure_tables():
+    '''
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Sales history (receipts)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_history (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT UNIQUE,
+            customer_name TEXT,
+            phone TEXT,
+            items TEXT,
+            total NUMERIC,
+            discount NUMERIC,
+            gst NUMERIC,
+            grand_total NUMERIC,
+            gstin TEXT,
+            date TEXT,
+            invoice_text TEXT
+        )
+    """)
+
+    # Product catalog for barcode/search
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS barcode_catalog (
+            id SERIAL PRIMARY KEY,
+            brand TEXT,
+            mrp NUMERIC,
+            bought_price NUMERIC,
+            selling_price NUMERIC,
+            size TEXT,
+            category TEXT,
+            barcode_data TEXT UNIQUE,
+            status TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # Printed counter (ok if it already exists)
+    try:
+        cur.execute("ALTER TABLE barcode_catalog ADD COLUMN IF NOT EXISTS printed_qty INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
+    # Per-barcode sold quantities
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_barcodes (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT,
+            code TEXT,
+            qty INTEGER DEFAULT 1
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_barcodes_code ON sales_barcodes(code)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_barcodes_invoice ON sales_barcodes(invoice_id)")
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    '''
 
 
 # ---------------------------------
@@ -145,9 +210,35 @@ def generate_unique_invoice_id() -> str:
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
+GUARD_PAD = 100  # minimum margin over bought price per unit
+
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
+_ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
+GUARD_PAD = 100  # unit after-discount must be >= bought_price + GUARD_PAD
+
+def _parse_percent(di: str):
+    """Return float percent if parseable, else None."""
+    if not di:
+        return None
+    di = di.strip()
+    if di.endswith("%"):
+        di = di[:-1]
+    try:
+        return float(di)
+    except Exception:
+        return None
+
+# ---------------------------------
+# Totals & discount rules
+# ---------------------------------
 _ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
 _GUARD_PAD = 100  # backend safety: unit_after must be >= bought + 100
-
 
 def calculate_totals(items, discount_input: str):
     """
@@ -208,7 +299,9 @@ def calculate_totals(items, discount_input: str):
         items_effective.append(out_it)
 
     # Optional cart-wide guard (kept as a safety): allow dropping global effect only.
+    # Since we already guarded per-item above, grand_total should usually be fine.
     if grand_total < (bought_total + _GUARD_PAD):
+        # Roll back ONLY the global part: recompute with per-row only
         subtotal = 0.0
         grand_total = 0.0
         discount_amt_total = 0.0
@@ -217,10 +310,11 @@ def calculate_totals(items, discount_input: str):
             qty         = int(it.get("qty", 1))
             unit_price  = float(it.get("price", 0))
             unit_bought = float(it.get("bought_price", 0))
-            row_pct     = float(it.get("disc_pct") or 0.0)
+            row_pct     = float(it.get("disc_pct") or 0.0)  # ignore global now
             eff_pct     = row_pct if row_pct > 0 else 0.0
             unit_after  = unit_price * (1.0 - eff_pct/100.0)
 
+            # keep per-item guard
             if eff_pct > 0 and unit_after < (unit_bought + _GUARD_PAD):
                 brand = it.get("brand") or ""
                 cat   = it.get("category") or ""
@@ -252,83 +346,13 @@ def calculate_totals(items, discount_input: str):
     }
 
 
+
+
+
+
 # ---------------------------------
-# Loyalty (minimal, single-table)
+# Invoice text (monospace)
 # ---------------------------------
-REDEEM_CAP = 100  # max 100 points per purchase
-EARN_PER_100 = 2
-def _earn_from_amount(amount: float) -> int:
-    """Whole points based on final payable amount and EARN_PER_100."""
-    amt = max(0, int(round(float(amount or 0))))
-    return int((amt * EARN_PER_100) // 100)
-def lp_ensure_table():
-    """Create tiny balance table per phone (safe to call on boot)."""
-    try:
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS loyalty_points (
-                  phone      TEXT PRIMARY KEY,
-                  balance    INTEGER NOT NULL DEFAULT 0,
-                  updated_at TIMESTAMPTZ DEFAULT NOW()
-                )
-            """)
-            # Add loyalty columns to sales_history (used for async repair visibility)
-            cur.execute("""
-                ALTER TABLE sales_history
-                  ADD COLUMN IF NOT EXISTS points_earned INTEGER NOT NULL DEFAULT 0,
-                  ADD COLUMN IF NOT EXISTS points_redeemed INTEGER NOT NULL DEFAULT 0,
-                  ADD COLUMN IF NOT EXISTS points_synced_at TIMESTAMPTZ;
-            """)
-            conn.commit()
-    except Exception:
-        # non-fatal on boot
-        pass
-
-def lp_get_balance(phone: str) -> int:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT balance FROM loyalty_points WHERE phone=%s", (phone,))
-        row = cur.fetchone()
-        return int(row[0]) if row else 0
-
-def lp_upsert_delta(phone: str, delta: int) -> int:
-    """Add delta to balance (can be negative). Returns new balance."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO loyalty_points(phone, balance, updated_at)
-            VALUES (%s, %s, NOW())
-            ON CONFLICT (phone) DO UPDATE
-            SET balance = loyalty_points.balance + EXCLUDED.balance,
-                updated_at = NOW()
-            RETURNING balance
-        """, (phone, delta))
-        newbal = int(cur.fetchone()[0])
-        conn.commit()
-        return newbal
-
-def loyalty_simulate_preview(phone: str, grand_total: float, requested_redeem: int):
-    """No DB writes. Returns (use_preview, earn_preview, balance_after_preview, final_after)."""
-    avail = lp_get_balance(phone)
-    pay   = max(0, int(round(float(grand_total))))
-    use   = max(0, min(int(requested_redeem or 0), REDEEM_CAP, avail, pay))
-    final_after = pay - use
-    earn = _earn_from_amount(final_after)
-    bal_after = avail - use + earn
-    return use, earn, bal_after, float(final_after)
-
-# billing_logic.py
-EARNING_ENABLED = True  # set False to pause earning
-
-def loyalty_finalize(phone: str, grand_total: float, requested_redeem: int):
-    avail = lp_get_balance(phone)
-    pay   = max(0, int(round(float(grand_total))))
-    use   = max(0, min(int(requested_redeem or 0), REDEEM_CAP, avail, pay))
-    final_payable = pay - use
-    earned = _earn_from_amount(final_payable) if EARNING_ENABLED else 0
-    new_bal = lp_upsert_delta(phone, -use + earned)
-    return use, earned, new_bal, float(final_payable)
-
-
-
 def generate_invoice_text(
         invoice_id,
         customer_name,
@@ -339,50 +363,27 @@ def generate_invoice_text(
         grand_total,
         discount_amt,
         show_time: bool = True,
-        # Loyalty (optional)
-        points_used: int = 0,
-        points_earned: int = 0,
-        points_balance: int = None,
     ):
     COLS = 38
     W_NO, W_BR, W_SZ, W_Q, W_MRP, W_PRC = 2, 8, 4, 3, 6, 10
 
-    def clamp(s, n): 
-        return (str(s)[:n]).ljust(n)
-
-    def fmt_signed(n: float, force_plus=False) -> str:
-        """Format integers with + / -; zero returns '0' (no sign)."""
-        n = int(round(float(n or 0)))
-        if n == 0:
-            return "0"
-        if n > 0:
-            return f"+{n}" if force_plus else str(n)
-        return f"-{abs(n)}"
+    def clamp(s, n): return (str(s)[:n]).ljust(n)
 
     lines = []
-    # Header (centered)
-    header = [
-        "DRIP",
-        "#6-2-52,",
-        "DL Road, Hindupur,",
-        "Satya Sai (D), AP-515201",
-        "Phone: 8106204688",
-    ]
+    header = ["DRIP", "#6-2-52,", "DL Road, Hindupur,", "Satya Sai (D), AP-515201", "Phone: 8106204688"]
     for s in header:
         lines.append(s.center(COLS))
     lines.append("-" * COLS)
 
-    # Invoice/date line
     today_str = india_date_str(include_time=show_time)
-    left  = f"Invoice: {invoice_id or '-'}"
+    left  = f"Invoice: {invoice_id}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
 
-    # Customer line
-    lines.append(clamp(f"Customer: {customer_name} / {customer_phone}", COLS))
+    cust_line = f"Customer: {customer_name} / {customer_phone}"
+    lines.append(clamp(cust_line, COLS))
     lines.append("-" * COLS)
 
-    # Table header
     hdr = (
         f"{'No':<{W_NO}} "
         f"{'Brand':<{W_BR}} "
@@ -394,7 +395,7 @@ def generate_invoice_text(
     lines.append(hdr)
     lines.append("-" * COLS)
 
-    # Items
+    # Render each row: if an effective price exists and differs, show (orig)after
     for idx, item in enumerate(items, start=1):
         brand = clamp(item.get("brand", ""), W_BR)
         size  = clamp(item.get("size", ""), W_SZ)
@@ -404,11 +405,15 @@ def generate_invoice_text(
 
         eff_unit = item.get("effective_unit_price")
         if eff_unit is None:
+            # fallback: try to compute from effective_pct if present
             eff_pct = float(item.get("effective_pct") or 0.0)
             eff_unit = int(round(price_orig * (1 - eff_pct/100.0))) if eff_pct > 0 else price_orig
         eff_unit = int(eff_unit)
 
-        price_str = f"({price_orig}){eff_unit}" if eff_unit != price_orig else f"{price_orig}"
+        if eff_unit != price_orig:
+            price_str = f"({price_orig}){eff_unit}"
+        else:
+            price_str = f"{price_orig}"
 
         row = (
             f"{idx:<{W_NO}} "
@@ -421,49 +426,24 @@ def generate_invoice_text(
         lines.append(row)
 
     lines.append("-" * COLS)
-
-    # ==== Loyalty block (ABOVE totals), like your sample ====
     LBL_W = 18
-    if (points_used or points_earned or points_balance is not None):
-        # Only show Redeemed if > 0; always sign it negative
-        if points_used:
-            lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{fmt_signed(-abs(points_used)).rjust(COLS - LBL_W)}")
-        # Earned as +N (force plus)
-        if points_earned:
-            lines.append(f"{clamp('Earned (₹)', LBL_W)}{fmt_signed(points_earned, force_plus=True).rjust(COLS - LBL_W)}")
-        # Balance without sign
-        if points_balance is not None:
-            bal = int(round(points_balance or 0))
-            lines.append(f"{clamp('Balance (₹)', LBL_W)}{str(bal).rjust(COLS - LBL_W)}")
-        lines.append("-" * COLS)
 
-    # ==== Totals block ====    
-
+    # Show “Saved” (₹) instead of “Discount (%)”
     saved_amt = float(discount_amt or 0)
+    if saved_amt > 0:
+        label = "Saved"
+        lines.append(f"{clamp(label, LBL_W)}{('-' + format(saved_amt, '.2f')).rjust(COLS - LBL_W)}")
 
-    # --- NEW: compute extra savings if operator manually overrode total ---
-    try:
-        calc_total = float(subtotal or 0) - float(saved_amt or 0)
-        override_diff = calc_total - float(grand_total or 0)
-        if override_diff > 0.009:  # treat as additional savings
-            saved_amt += override_diff
-    except Exception:
-        pass
-
-    gst_val = float(gst_amount or 0)
-    if gst_val > 0:
-        lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
-
-    lines.append(f"{clamp('Total', LBL_W)}{format(float(grand_total or 0), '.2f').rjust(COLS - LBL_W)}")
-
+    total_label = "Total"
+    lines.append(f"{clamp(total_label, LBL_W)}{format(grand_total, '.2f').rjust(COLS - LBL_W)}")
     lines.append("-" * COLS)
-
-    lines.append("Thanks for shopping with DRIP Fashions!".center(COLS))
+    lines.append("Thank you for shopping with DRIP!".center(COLS))
     lines.append(" " * COLS)
 
-    # Left margin inset for printer
     MARGIN = 2
-    return "\n".join((" " * MARGIN) + ln for ln in lines)
+    lines = [(" " * MARGIN) + line for line in lines]
+    return "\n".join(lines)
+
 
 
 
@@ -473,6 +453,34 @@ def generate_invoice_text(
 def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
     conn = get_connection()
     cur = conn.cursor()
+    '''
+
+    # ensure tables (safe to call)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_history (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT UNIQUE,
+            customer_name TEXT,
+            phone TEXT,
+            items TEXT,
+            total NUMERIC,
+            discount NUMERIC,
+            gst NUMERIC,
+            grand_total NUMERIC,
+            gstin TEXT,
+            date TEXT,
+            invoice_text TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sales_barcodes (
+            id SERIAL PRIMARY KEY,
+            invoice_id TEXT,
+            code TEXT,
+            qty INTEGER DEFAULT 1
+        )
+    """)
+    '''
 
     date_str = india_date_str()
 
@@ -505,75 +513,31 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
 # ---------------------------------
 # Queries for history & reprint
 # ---------------------------------
-def _has_col(cur, table: str, col: str) -> bool:
-    cur.execute("""
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
-        LIMIT 1
-    """, (table, col))
-    return cur.fetchone() is not None
+def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
+    conn = get_connection()
+    cur = conn.cursor()
 
-def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tuple], bool]:
+    sql_base = """
+        SELECT invoice_id, customer_name, phone, date, grand_total
+        FROM sales_history
     """
-    Returns rows shaped as:
-      0=invoice_id
-      1=customer_name
-      2=phone
-      3=display_date (YYYY-MM-DD HH:MM)
-      4=grand_total (numeric)
-      5=points_earned (int, 0 if column absent)
-    """
-    table = "sales_history"
-    where, params = [], []
+    sql_where = " WHERE phone ILIKE %s OR invoice_id ILIKE %s" if search_term else ""
+    sql_order = " ORDER BY id DESC "   # newest by numeric id
+    sql_tail  = " LIMIT %s OFFSET %s"
 
-    if q:
-        where.append("(invoice_id ILIKE %s OR phone ILIKE %s)")
-        params.extend([f"%{q}%", f"%{q}%"])
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = sql_base + sql_where + sql_order + sql_tail
+    params = (
+        (f"%{search_term}%", f"%{search_term}%", limit + 1, offset)
+        if search_term else
+        (limit + 1, offset)
+    )
 
-    with get_connection() as conn, conn.cursor() as cur:
-        # Detect timestamp column
-        ts_candidates = ["created_at", "sold_at", "ts", "timestamp", "datetime", "date"]
-        ts_col = None
-        for c in ts_candidates:
-            if _has_col(cur, table, c):
-                ts_col = c
-                break
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
 
-        # Build date expr safely
-        if ts_col:
-            dt_expr = f"to_char({ts_col}, 'YYYY-MM-DD HH24:MI')"
-        else:
-            # last resort: show empty string (prevents SQL error)
-            dt_expr = "''"
-
-        # Detect points_earned column
-        has_points = _has_col(cur, table, "points_earned")
-        points_expr = "COALESCE(points_earned, 0)" if has_points else "0"
-
-        sql = f"""
-            SELECT
-              invoice_id,                 -- 0
-              customer_name,              -- 1
-              phone,                      -- 2
-              {dt_expr} AS disp_dt,       -- 3
-              grand_total::numeric(12,2), -- 4
-              {points_expr}::int          -- 5
-            FROM public.{table}
-            {where_sql}
-            ORDER BY id DESC
-            LIMIT %s OFFSET %s
-        """
-        params.extend([limit + 1, offset])
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-
-    has_next = len(rows) > limit
-    if has_next:
-        rows = rows[:limit]
-    return rows, has_next
-
+    # return first 20 + has_next flag
+    return rows[:limit], (len(rows) > limit)
 
 
 
