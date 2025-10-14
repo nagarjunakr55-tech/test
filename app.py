@@ -15,9 +15,7 @@ from billing_logic import (
     find_product_by_barcode,
     search_products,
     get_last_customer_name,
-    calculate_totals,
-    # loyalty
-    lp_ensure_table, lp_get_balance, loyalty_simulate_preview, loyalty_finalize, REDEEM_CAP,EARN_PER_100
+    calculate_totals
 )
 
 from db import get_connection
