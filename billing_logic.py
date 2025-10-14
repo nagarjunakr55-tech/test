@@ -3,6 +3,8 @@ from datetime import datetime
 import json
 import random
 import string
+from typing import Tuple, List, Any
+from db import get_connection
 
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
@@ -503,31 +505,75 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
 # ---------------------------------
 # Queries for history & reprint
 # ---------------------------------
-def get_invoices(search_term: str = "", limit: int = 20, offset: int = 0):
-    conn = get_connection()
-    cur = conn.cursor()
+def _has_col(cur, table: str, col: str) -> bool:
+    cur.execute("""
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+        LIMIT 1
+    """, (table, col))
+    return cur.fetchone() is not None
 
-    sql_base = """
-        SELECT invoice_id, customer_name, phone, date, grand_total
-        FROM sales_history
+def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tuple], bool]:
     """
-    sql_where = " WHERE phone ILIKE %s OR invoice_id ILIKE %s" if search_term else ""
-    sql_order = " ORDER BY id DESC "
-    sql_tail  = " LIMIT %s OFFSET %s"
+    Returns rows shaped as:
+      0=invoice_id
+      1=customer_name
+      2=phone
+      3=display_date (YYYY-MM-DD HH:MM)
+      4=grand_total (numeric)
+      5=points_earned (int, 0 if column absent)
+    """
+    table = "sales_history"
+    where, params = [], []
 
-    sql = sql_base + sql_where + sql_order + sql_tail
-    params = (
-        (f"%{search_term}%", f"%{search_term}%", limit + 1, offset)
-        if search_term else
-        (limit + 1, offset)
-    )
+    if q:
+        where.append("(invoice_id ILIKE %s OR phone ILIKE %s)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    conn.close()
+    with get_connection() as conn, conn.cursor() as cur:
+        # Detect timestamp column
+        ts_candidates = ["created_at", "sold_at", "ts", "timestamp", "datetime", "date"]
+        ts_col = None
+        for c in ts_candidates:
+            if _has_col(cur, table, c):
+                ts_col = c
+                break
 
-    # return first 20 + has_next flag
-    return rows[:limit], (len(rows) > limit)
+        # Build date expr safely
+        if ts_col:
+            dt_expr = f"to_char({ts_col}, 'YYYY-MM-DD HH24:MI')"
+        else:
+            # last resort: show empty string (prevents SQL error)
+            dt_expr = "''"
+
+        # Detect points_earned column
+        has_points = _has_col(cur, table, "points_earned")
+        points_expr = "COALESCE(points_earned, 0)" if has_points else "0"
+
+        sql = f"""
+            SELECT
+              invoice_id,                 -- 0
+              customer_name,              -- 1
+              phone,                      -- 2
+              {dt_expr} AS disp_dt,       -- 3
+              grand_total::numeric(12,2), -- 4
+              {points_expr}::int          -- 5
+            FROM public.{table}
+            {where_sql}
+            ORDER BY id DESC
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit + 1, offset])
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    has_next = len(rows) > limit
+    if has_next:
+        rows = rows[:limit]
+    return rows, has_next
+
 
 
 
