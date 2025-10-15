@@ -458,6 +458,11 @@ def generate_invoice_text(
     if gst_val > 0:
         lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
 
+    saved_amt = float(discount_amt or 0)
+    if saved_amt > 0:
+        label = "Saved"
+        lines.append(f"{clamp(label, LBL_W)}{('-' + format(saved_amt, '.2f')).rjust(COLS - LBL_W)}")
+        
     lines.append(f"{clamp('Total', LBL_W)}{format(float(grand_total or 0), '.2f').rjust(COLS - LBL_W)}")
 
     lines.append("-" * COLS)
