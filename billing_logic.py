@@ -5,6 +5,10 @@ import random
 import string
 from typing import Tuple, List, Any
 from db import get_connection
+from threading import Thread
+from typing import Optional, List, Dict, Any, Tuple
+
+
 
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
@@ -542,11 +546,22 @@ def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tu
                 break
 
         # Build date expr safely
+                # Build date expr safely
         if ts_col:
-            dt_expr = f"to_char({ts_col}, 'YYYY-MM-DD HH24:MI')"
+            # If the column is literally named "date", your schema stores it as TEXT like "15-10-2025 08:15 AM".
+            # Parse it first, then format to a stable display string.
+            if ts_col.lower() == "date":
+                dt_expr = (
+                    "to_char("
+                    "  to_timestamp(date, 'DD-MM-YYYY HH12:MI AM'),"
+                    "  'YYYY-MM-DD HH24:MI'"
+                    ")"
+                )
+            else:
+                dt_expr = f"to_char({ts_col}, 'YYYY-MM-DD HH24:MI')"
         else:
-            # last resort: show empty string (prevents SQL error)
             dt_expr = "''"
+
 
         # Detect points_earned column
         has_points = _has_col(cur, table, "points_earned")
@@ -584,3 +599,163 @@ def get_invoice_text(invoice_id):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
+
+
+# New code here
+
+# services/billing_logic.py  (additions)
+
+
+
+def _coerce_rupees(x):
+    try:
+        return max(0, int(round(float(str(x).strip()))))
+    except Exception:
+        return None
+
+def checkout_preview_logic(customer_name: str, phone: str, items: list,
+                           discount_input: str = "", override_grand_total=None,
+                           redeem_points: int = 0):
+    if not (phone.isdigit() and len(phone) == 10):
+        return False, {"error": "invalid_phone"}
+    if not items:
+        return False, {"error": "empty_cart"}
+
+    totals = calculate_totals(items, discount_input)  # may raise ValueError
+    items_for_receipt = totals.get("items_effective", items)
+
+    original_final = int(round(float(totals.get("grand_total", 0))))
+    effective_final = original_final
+
+    if override_grand_total is not None:
+        coerced = _coerce_rupees(override_grand_total)
+        if coerced is None:
+            return False, {"error": "Invalid override amount"}
+        effective_final = coerced
+
+    use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
+        phone=phone,
+        grand_total=float(effective_final),
+        requested_redeem=int(redeem_points or 0)
+    )
+
+    invoice_text = generate_invoice_text(
+        invoice_id="",
+        customer_name=customer_name or "Guest",
+        customer_phone=phone,
+        items=items_for_receipt,
+        subtotal=totals["subtotal"],
+        gst_amount=totals["gst"],
+        grand_total=final_after,
+        discount_amt=totals["discount_amt"],
+        points_used=use_p,
+        points_earned=earn_p,
+        points_balance=bal_p
+    )
+
+    return True, {
+        "invoice_text": invoice_text,
+        "points_used": use_p,
+        "points_earned": earn_p,
+        "points_balance": bal_p,
+        "items_for_receipt": items_for_receipt,
+        "totals": totals,
+        "final_after": final_after
+    }
+
+
+from typing import Optional, List
+
+def checkout_finalize_logic(
+    invoice_id: Optional[str],
+    customer_name: str,
+    phone: str,
+    items: List[dict],
+    discount_input: str = "",
+    override_grand_total=None,
+    redeem_points: int = 0,
+    async_save: bool = False,
+):
+    if not (phone.isdigit() and len(phone) == 10):
+        return False, {"error": "invalid_phone"}
+
+    if not items:
+        return False, {"error": "empty_cart"}
+
+    try:
+        totals = calculate_totals(items, discount_input)
+    except ValueError as e:
+        return False, {"error": str(e)}
+
+    items_for_receipt = totals.get("items_effective", items)
+
+    original_final = int(round(float(totals.get("grand_total", 0))))
+    effective_final = original_final
+    if override_grand_total is not None:
+        coerced = _coerce_rupees(override_grand_total)
+        if coerced is None:
+            return False, {"error": "Invalid override amount"}
+        effective_final = coerced
+
+    invoice_id = (invoice_id or "").strip() or generate_unique_invoice_id()
+
+    used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
+        phone=phone,
+        grand_total=float(effective_final),
+        requested_redeem=int(redeem_points or 0)
+    )
+
+    invoice_text = generate_invoice_text(
+        invoice_id=invoice_id,
+        customer_name=customer_name or "Guest",
+        customer_phone=phone,
+        items=items_for_receipt,
+        subtotal=totals["subtotal"],
+        gst_amount=totals["gst"],
+        grand_total=final_payable,
+        discount_amt=totals["discount_amt"],
+        points_used=used_pts,
+        points_earned=earned_pts,
+        points_balance=new_balance
+    )
+
+    def _persist():
+        try:
+            save_to_db(
+                invoice_id=invoice_id,
+                name=customer_name or "Guest",
+                phone=phone,
+                items=items_for_receipt,
+                subtotal=totals["subtotal"],
+                discount_amt=totals["discount_amt"],
+                gst_amt=totals["gst"],
+                grand_total=final_payable,
+                invoice_text=invoice_text
+            )
+            from db import get_connection
+            with get_connection() as conn2, conn2.cursor() as cur2:
+                cur2.execute("""
+                    UPDATE public.sales_history
+                       SET points_earned=%s,
+                           points_redeemed=%s,
+                           points_synced_at=NOW()
+                     WHERE invoice_id=%s
+                """, (earned_pts, used_pts, invoice_id))
+                conn2.commit()
+        except Exception:
+            if not async_save:
+                raise
+
+    if async_save:
+        from threading import Thread
+        Thread(target=_persist, daemon=True).start()
+    else:
+        _persist()
+
+    return True, {
+        "invoice_id": invoice_id,
+        "invoice_text": invoice_text,
+        "points_used": used_pts,
+        "points_earned": earned_pts,
+        "points_balance": new_balance
+    }

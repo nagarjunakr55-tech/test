@@ -1,54 +1,27 @@
 import os
 import json
 import logging
-from flask import (
-    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response, flash
-)
+import time
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
-from billing_logic import (
-    # core
-    generate_unique_invoice_id,
-    generate_invoice_text,
-    save_to_db,
-    get_invoices,
-    get_invoice_text,
-    find_product_by_barcode,
-    search_products,
-    get_last_customer_name,
-    calculate_totals,
-    # loyalty
-    lp_ensure_table, lp_get_balance, loyalty_simulate_preview, loyalty_finalize, REDEEM_CAP,EARN_PER_100
+from flask import (
+    Flask, render_template, request, redirect, url_for, jsonify, abort, session, Response, flash, send_from_directory
 )
 
 from db import get_connection
 from labels import labels_bp
 from inventory import inventory_bp
-from flask import send_from_directory
 from reports_bp import reports_bp
-from auth_logic import ensure_user_schema, verify_user
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from auth_logic import verify_user
+from billing_logic import (
+    lp_ensure_table,
+    REDEEM_CAP, EARN_PER_100,
+)
 from threading import Thread
-import time
-from decimal import Decimal, InvalidOperation
 
-PRINT_CACHE = {}           # { code: (invoice_text, expires_epoch) }
-PRINT_CACHE_TTL = 300      # seconds
+from controllers.billing_controller import billing_bp
+from controllers.history_controller import history_bp
 
-def _cache_put(code: str, text: str, ttl: int = PRINT_CACHE_TTL):
-    PRINT_CACHE[code] = (text, time.time() + ttl)
-
-def _cache_get(code: str):
-    v = PRINT_CACHE.get(code)
-    if not v:
-        return None
-    text, exp = v
-    if time.time() > exp:
-        PRINT_CACHE.pop(code, None)
-        return None
-    return text
-
-def _cache_pop(code: str):
-    PRINT_CACHE.pop(code, None)
 
 
 def create_app() -> Flask:
@@ -107,28 +80,33 @@ def create_app() -> Flask:
     # Public endpoints allow-list (no auth)
     # -----------------------------
     PUBLIC_PREFIXES = (
-        "/receipt/lines/",
-        "/receipts/tspl/",
-        "/health", "/healthz", "/diag",
-        "/__routes", "/__endpoint",
-        "/static/", "/favicon.ico"
+    "/receipt/lines/",   # plain invoice text for Android
+    "/receipts/tspl/",   # TSPL for full receipt
+    "/labels/tspl/",     # TSPL for barcode labels (Android app fetches this)
+    "/health", "/healthz", "/diag",
+    "/__routes", "/__endpoint",
+    "/static/", "/favicon.ico"
     )
 
     @app.before_request
     def _auth_guard():
         p = (request.path or "/")
-        # public endpoints
+
+        # Public endpoints
         if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
             return
-        # allow login itself
-        if p == "/login" or p.startswith("/login?"):
+
+        # Allow login/logout
+        if p in ("/login", "/logout"):
             return
-        # require session["user"]
+
+        # Everything else needs a session
         if not session.get("user"):
             nxt = request.path
             if request.query_string:
                 nxt += "?" + request.query_string.decode("utf-8", errors="ignore")
             return redirect(url_for("login", next=nxt))
+
 
     @app.route('/favicon.ico')
     def favicon():
@@ -152,7 +130,6 @@ def create_app() -> Flask:
     def inject_admin():
         return {"is_admin": is_admin()}
 
-    # Admin login/logout
     @app.post("/admin/login")
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
@@ -178,107 +155,19 @@ def create_app() -> Flask:
     # -----------------------------
     @app.route("/")
     def home():
-        return redirect(url_for("billing"))
+        # /billing is inside the billing blueprint
+        return redirect(url_for("billing.billing"))
 
     # --- Blueprints ---
+    app.register_blueprint(billing_bp)   # all billing UI + APIs
     app.register_blueprint(labels_bp)
     app.register_blueprint(inventory_bp)
-    app.register_blueprint(reports_bp)    
-
-    # Billing (GET = UI, POST = legacy form fallback)
-    @app.route("/billing", methods=["GET", "POST"])
-    def billing():
-        if request.method == "POST":
-            # Legacy HTML form fallback
-            name = (request.form.get("name") or "Guest").strip() or "Guest"
-            phone = (request.form.get("phone") or "").strip()
-
-            cart_json = request.form.get("cart_json")
-            discount_input = (request.form.get("discount") or "").strip()
-
-            if cart_json:
-                try:
-                    items = json.loads(cart_json)
-                except Exception:
-                    items = []
-            else:
-                items = [
-                    {"brand": "Nike", "mrp_price": 1200, "bought_price": 800, "price": 1000, "qty": 1, "size": "M", "category": "Shirt"},
-                    {"brand": "Adidas", "mrp_price": 1500, "bought_price": 1000, "price": 1200, "qty": 2, "size": "L", "category": "Pant"},
-                ]
-
-            if not (phone.isdigit() and len(phone) == 10):
-                return render_template("billing.html", error="Enter valid 10-digit phone"), 400
-
-            totals = calculate_totals(items, discount_input)
-            items_for_receipt = totals.get("items_effective", items)
-            invoice_id = generate_unique_invoice_id()
-
-            # No loyalty in legacy flow to keep it simple; use UI/JS APIs.
-            invoice_text = generate_invoice_text(
-                invoice_id=invoice_id,
-                customer_name=name,
-                customer_phone=phone,
-                items=items_for_receipt,
-                subtotal=totals["subtotal"],
-                gst_amount=totals["gst"],
-                grand_total=totals["grand_total"],
-                discount_amt=totals["discount_amt"]
-            )
-
-            save_to_db(
-                invoice_id=invoice_id,
-                name=name,
-                phone=phone,
-                items=items_for_receipt,
-                subtotal=totals["subtotal"],
-                discount_amt=totals["discount_amt"],
-                gst_amt=totals["gst"],
-                grand_total=totals["grand_total"],
-                invoice_text=invoice_text
-            )
-
-            return render_template("invoice.html", invoice=invoice_text, invoice_id=invoice_id)
-
-        # GET → rich JS UI (uses /api/*)
-        return render_template("billing.html")
+    app.register_blueprint(reports_bp)
+    app.register_blueprint(history_bp) 
 
     PER_PAGE = 20
 
-    @app.route("/history", methods=["GET", "POST"])
-    def history():
-        if request.method == "POST":
-            q = (request.form.get("search") or request.form.get("q") or "").strip()
-            return redirect(url_for("history", q=q, page=1))
 
-        q = (request.args.get("q") or request.args.get("search") or "").strip()
-        try:
-            page = max(int(request.args.get("page", 1)), 1)
-        except ValueError:
-            page = 1
-
-        offset = (page - 1) * PER_PAGE
-        rows, has_next = get_invoices(q, limit=PER_PAGE, offset=offset)
-
-        is_admin_flag = bool(session.get("role") == "admin" or session.get("is_admin"))
-
-        return render_template(
-            "history.html",
-            rows=rows,
-            search_term=q,
-            page=page,
-            has_next=has_next,
-            is_admin=is_admin_flag,
-        )
-
-    @app.route("/reprint/<invoice_id>")
-    def reprint(invoice_id):
-        invoice = get_invoice_text(invoice_id)
-        if invoice:
-            return render_template("invoice.html", invoice=invoice, invoice_id=invoice_id)
-        return f"Invoice {invoice_id} not found", 404
-
-    # Print views (3-inch, no margins)
     @app.route("/print/<invoice_id>")
     def print_invoice(invoice_id):
         invoice = get_invoice_text(invoice_id)
@@ -295,140 +184,6 @@ def create_app() -> Flask:
         if not invoice:
             abort(404, f"Invoice {invoice_id} not found")
         return render_template("print.html", invoice=invoice)
-
-    # -----------------------------
-    # APIs used by billing.html JS
-    # -----------------------------
-    @app.post("/api/barcode_lookup")
-    def api_barcode_lookup():
-        data = request.get_json(silent=True) or {}
-        code = (data.get("barcode") or "").strip().upper()
-        if not code:
-            return jsonify({"ok": False, "error": "empty_barcode"}), 400
-
-        def to_int_or_none(x):
-            if x is None: return None
-            try:
-                return int(float(str(x).strip()))
-            except Exception:
-                return None
-
-        row = None
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT brand, category, size, mrp, bought_price, selling_price
-                    FROM public.barcode_catalog
-                    WHERE barcode_data = %s
-                    LIMIT 1
-                    """,
-                    (code,)
-                )
-                row = cur.fetchone()
-
-        if not row:
-            return jsonify({"ok": False, "error": "not_found"}), 404
-
-        brand, category, size, mrp, bought, sp = row
-
-        item = {
-            "code":        code,
-            "brand":       brand or "",
-            "category":    category or "",
-            "size":        size or "",
-            "qty":         1,
-            "mrp_price":   to_int_or_none(mrp),
-            "bought_price":to_int_or_none(bought),
-            "price":       to_int_or_none(sp) or 0
-        }
-        return jsonify({"ok": True, "item": item})
-
-    @app.get("/health")
-    def health():
-        return {"ok": True}, 200
-
-    @app.post("/api/search_products")
-    def api_search_products():
-        data = request.get_json(silent=True) or {}
-        brand = (data.get("brand") or "").strip()
-        category = (data.get("category") or "").strip()
-        size = (data.get("size") or "").strip()
-        limit = int(data.get("limit") or 20)
-        rows = search_products(brand=brand, category=category, size=size, limit=limit)
-        out = []
-        for r in rows:
-            out.append({
-                "brand": r["brand"],
-                "mrp_price": float(r.get("mrp", 0)),
-                "bought_price": float(r.get("bought_price", 0)),
-                "price": float(r.get("selling_price", 0)),
-                "qty": 1,
-                "size": r.get("size", ""),
-                "category": r.get("category", "")
-            })
-        return jsonify({"ok": True, "results": out})
-
-    @app.get("/api/customer_last_name")
-    def api_customer_last_name():
-        phone = (request.args.get("phone") or "").strip()
-        if not phone or not phone.isdigit() or len(phone) != 10:
-            return jsonify({"ok": False, "name": ""})
-        name = get_last_customer_name(phone)
-        return jsonify({"ok": True, "name": name or ""})
-
-    # ---- Loyalty APIs ----
-    @app.get("/api/loyalty_points")
-    def api_loyalty_points():
-        phone = (request.args.get("phone") or "").strip()
-        if not (phone.isdigit() and len(phone) == 10):
-            return jsonify({"ok": False, "points": 0, "cap": REDEEM_CAP, "rate_per_100": EARN_PER_100})
-        try:
-            pts = lp_get_balance(phone)
-            return jsonify({"ok": True, "points": int(pts), "cap": REDEEM_CAP, "rate_per_100": EARN_PER_100})
-        except Exception:
-            return jsonify({"ok": False, "points": 0, "cap": REDEEM_CAP, "rate_per_100": EARN_PER_100}), 500
-
-
-    # -----------------------------
-    # TSPL / Receipt endpoints
-    # -----------------------------
-    @app.get("/receipt/lines/<invoice_id>.txt")
-    def receipt_lines(invoice_id):
-        invoice = _cache_get(invoice_id) or get_invoice_text(invoice_id)
-        if not invoice:
-            abort(404, f"Invoice {invoice_id} not found")
-        body = invoice if invoice.endswith("\n") else invoice + "\n"
-        return Response(body, mimetype="text/plain; charset=utf-8",
-                        headers={"Cache-Control": "no-store"})
-
-    @app.get("/receipts/tspl/<invoice_id>.txt")
-    def receipts_tspl(invoice_id):
-        import re
-        copies = int((request.args.get("copies") or "1").strip() or 1)
-        invoice = _cache_get(invoice_id) or get_invoice_text(invoice_id)
-        if not invoice:
-            abort(404, f"Invoice {invoice_id} not found")
-
-        date_only_pat = re.compile(r"(Date:\s*\d{2}-\d{2}-\d{4})(?:\s+\d{2}:\d{2}(?:\s*[AP]M)?)?")
-        lines = [date_only_pat.sub(r"\1", ln) for ln in invoice.splitlines()]
-
-        y = 20
-        dy = 28
-        tspl = [
-            "SIZE 72 mm, 200 mm",
-            "GAP 2 mm, 0",
-            "DIRECTION 1",
-            "REFERENCE 0,0",
-            "CLS",
-        ]
-        for line in lines[:250]:
-            safe = line.replace('"', "'")
-            tspl.append(f'TEXT 20,{y},"0",0,1,1,"{safe}"')
-            y += dy
-        tspl.append(f"PRINT {copies},1")
-
-        return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
 
     # -----------------------------
     # Auth routes
@@ -452,7 +207,7 @@ def create_app() -> Flask:
             return redirect(_safe_next())
         return render_template("login.html")
 
-    def _safe_next(default_endpoint="billing"):
+    def _safe_next(default_endpoint="billing.billing"):
         raw = request.args.get("next") or ""
         if not raw:
             return url_for(default_endpoint)
@@ -464,74 +219,6 @@ def create_app() -> Flask:
             if path == pref or path.startswith(pref + "/") or path.startswith(pref + "?"):
                 return path + (("?" + u.query) if u.query else "")
         return url_for(default_endpoint)
-
-    # -----------------------------
-    # Admin: update total / delete
-    # -----------------------------
-    @app.post("/invoices/<invoice_id>/update_total")
-    def invoices_update_total(invoice_id):
-        require_admin()
-        wants_json = "application/json" in (request.headers.get("Accept") or "")
-
-        # Read value from JSON or from form
-        if request.is_json:
-            raw = (request.get_json(silent=True) or {}).get("grand_total", "")
-        else:
-            raw = (request.form.get("grand_total") or "")
-
-        raw = raw.strip()
-        try:
-            new_total = Decimal(raw)
-            if new_total < 0:
-                raise InvalidOperation
-        except InvalidOperation:
-            if wants_json:
-                return jsonify({"ok": False, "error": "badtotal"}), 400
-            return redirect(url_for("history", err="badtotal"))
-
-        conn = get_connection()
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE public.sales_history SET grand_total=%s, points_synced_at=NULL WHERE invoice_id=%s",
-                        (new_total, invoice_id),
-                    )
-            if wants_json:
-                return jsonify({"ok": True})
-            return redirect(url_for("history"))
-        finally:
-            conn.close()
-
-    @app.post("/invoices/<invoice_id>/delete")
-    def invoices_delete(invoice_id):
-        """Delete sale and undo its loyalty effect immediately (simple & safe)."""
-        require_admin()
-        conn = get_connection()
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    # Fetch phone + last known loyalty fields
-                    cur.execute("""
-                        SELECT phone, points_earned, points_redeemed
-                        FROM public.sales_history WHERE invoice_id=%s
-                    """, (invoice_id,))
-                    row = cur.fetchone()
-                    if row:
-                        phone, earned, redeemed = row[0], int(row[1] or 0), int(row[2] or 0)
-                        # Undo net effect: -earned + redeemed
-                        cur.execute("""
-                            INSERT INTO loyalty_points(phone, balance, updated_at)
-                            VALUES (%s, %s, NOW())
-                            ON CONFLICT (phone) DO UPDATE
-                              SET balance = loyalty_points.balance + EXCLUDED.balance,
-                                  updated_at = NOW()
-                        """, (phone, -earned + redeemed))
-                    # Delete the invoice
-                    cur.execute("DELETE FROM public.sales_history WHERE invoice_id=%s", (invoice_id,))
-            return redirect(url_for("history"))
-        finally:
-            conn.close()
 
     # -----------------------------
     # Background fixer (async repair for admin-edited totals)
@@ -571,206 +258,12 @@ def create_app() -> Flask:
                         """, (should_earn, inv))
                         conn2.commit()
             except Exception:
+                # keep daemon alive
                 pass
             time.sleep(interval_s)
 
     # start repair thread (daemon)
     Thread(target=_loyalty_repair_daemon, daemon=True).start()
-
-    # -----------------------------
-    # Billing APIs: checkout (preview/save)
-    # -----------------------------
-    @app.post("/api/checkout_prepare")
-    def api_checkout_prepare():
-        # Generate an ID right away and cache a tiny placeholder so the printer
-        # has *something* to fetch if it races immediately.
-        invoice_id = generate_unique_invoice_id()
-        try:
-            _cache_put(invoice_id, "Preparing receipt…")
-        except Exception:
-            pass
-        return jsonify({"ok": True, "invoice_id": invoice_id})
-
-    @app.post("/api/checkout")
-    def api_checkout():
-        data = request.get_json(silent=True) or {}
-
-        cust_name = (data.get("customer_name") or "Guest").strip() or "Guest"
-        phone = (data.get("phone") or "").strip()
-
-        if not (phone.isdigit() and len(phone) == 10):
-            return jsonify({"ok": False, "error": "invalid_phone"}), 400
-
-        items = data.get("items") or []
-        if not items:
-            return jsonify({"ok": False, "error": "empty_cart"}), 400
-
-        # 1) Calculate regular totals (this enforces discount rules)
-        try:
-            totals = calculate_totals(items, data.get("discount", ""))
-        except ValueError as e:
-            # propagate a clean error to the UI (no 500s)
-            return jsonify({"ok": False, "error": str(e)}), 400
-
-        items_for_receipt = totals.get("items_effective", items)
-        requested_redeem = int(data.get("redeem_points") or 0)
-        is_preview = bool(data.get("preview"))
-
-        # 2) Authoritative override (what the cashier typed)
-        #    Use this everywhere: preview text, saved history, SMS, points.
-        override_total = data.get("override_grand_total", None)
-
-        def _coerce_rupees(x):
-            try:
-                # allow strings/floats; round to integer rupees
-                return max(0, int(round(float(str(x).strip()))))
-            except Exception:
-                return None
-
-        original_final = int(round(float(totals.get("grand_total", 0))))
-        effective_final = original_final
-
-        if override_total is not None:
-            coerced = _coerce_rupees(override_total)
-            if coerced is None:
-                return jsonify({"ok": False, "error": "Invalid override amount"}), 400
-            effective_final = coerced
-
-        saved_delta = max(0, original_final - effective_final)
-
-
-        # 3) PREVIEW: simulate loyalty on the effective_final
-        if is_preview:
-            use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
-                phone=phone,
-                grand_total=float(effective_final),
-                requested_redeem=requested_redeem
-            )
-
-            invoice_text = generate_invoice_text(
-                invoice_id="",
-                customer_name=cust_name,
-                customer_phone=phone,
-                items=items_for_receipt,
-                subtotal=totals["subtotal"],
-                gst_amount=totals["gst"],
-                grand_total=final_after,
-                discount_amt=totals["discount_amt"],
-                points_used=use_p,
-                points_earned=earn_p,
-                points_balance=bal_p
-            )
-
-            return jsonify({
-                "ok": True,
-                "invoice_text": invoice_text,
-                "points_used": use_p,
-                "points_earned": earn_p,
-                "points_balance": bal_p
-            })
-
-        # 4) FINALIZE: commit loyalty based on the effective_final and save
-        async_save = bool(data.get("async"))
-        invoice_id = (data.get("invoice_id") or "").strip()
-        if not invoice_id:
-            invoice_id = generate_unique_invoice_id()
-
-
-        used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
-            phone=phone,
-            grand_total=float(effective_final),
-            requested_redeem=requested_redeem
-        )
-
-        invoice_text = generate_invoice_text(
-            invoice_id=invoice_id,
-            customer_name=cust_name,
-            customer_phone=phone,
-            items=items_for_receipt,
-            subtotal=totals["subtotal"],
-            gst_amount=totals["gst"],
-            grand_total=final_payable,
-            discount_amt=totals["discount_amt"],
-            points_used=used_pts,
-            points_earned=earned_pts,
-            points_balance=new_balance
-        )
-
-        if async_save:
-            # Cache for printer
-            try:
-                _cache_put(invoice_id, invoice_text)
-            except Exception:
-                pass
-
-            def _persist():
-                try:
-                    save_to_db(
-                        invoice_id=invoice_id,
-                        name=cust_name,
-                        phone=phone,
-                        items=items_for_receipt,
-                        subtotal=totals["subtotal"],
-                        discount_amt=totals["discount_amt"],
-                        gst_amt=totals["gst"],
-                        grand_total=final_payable,  # <= authoritative amount (after redeem)
-                        invoice_text=invoice_text
-                    )
-                    # Write loyalty fields for visibility; mark synced
-                    with get_connection() as conn2, conn2.cursor() as cur2:
-                        cur2.execute("""
-                            UPDATE public.sales_history
-                               SET points_earned=%s,
-                                   points_redeemed=%s,
-                                   points_synced_at=NOW()
-                             WHERE invoice_id=%s
-                        """, (earned_pts, used_pts, invoice_id))
-                        conn2.commit()
-                except Exception:
-                    pass
-
-            Thread(target=_persist, daemon=True).start()
-            return jsonify({
-                "ok": True,
-                "invoice_id": invoice_id,
-                "invoice_text": invoice_text,
-                "points_used": used_pts,
-                "points_earned": earned_pts,
-                "points_balance": new_balance
-            })
-
-        # Sync save
-        save_to_db(
-            invoice_id=invoice_id,
-            name=cust_name,
-            phone=phone,
-            items=items_for_receipt,
-            subtotal=totals["subtotal"],
-            discount_amt=totals["discount_amt"],
-            gst_amt=totals["gst"],
-            grand_total=final_payable,  # <= authoritative amount (after redeem)
-            invoice_text=invoice_text
-        )
-        with get_connection() as conn2, conn2.cursor() as cur2:
-            cur2.execute("""
-                UPDATE public.sales_history
-                   SET points_earned=%s,
-                       points_redeemed=%s,
-                       points_synced_at=NOW()
-                 WHERE invoice_id=%s
-            """, (earned_pts, used_pts, invoice_id))
-            conn2.commit()
-
-        return jsonify({
-            "ok": True,
-            "invoice_id": invoice_id,
-            "invoice_text": invoice_text,
-            "points_used": used_pts,
-            "points_earned": earned_pts,
-            "points_balance": new_balance
-        })
-
-
 
     # --- Debug helpers (keep ONE version) ---
     @app.get("/__routes")
@@ -783,14 +276,16 @@ def create_app() -> Flask:
     return app
 
 
+# -----------------------------
+# Entry point (keep this)
+# -----------------------------
 app = create_app()
 
-# --- Dev server entrypoint ---
 if __name__ == "__main__":
     try:
         import auth_init  # noqa: F401
     except Exception:
         pass
 
-    print("Starting dev server on http://127.0.0.1:5001 …")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    print("Starting dev server on http://127.0.0.1:5000 …")
+    app.run(host="0.0.0.0", port=5001, debug=True)

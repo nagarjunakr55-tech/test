@@ -703,7 +703,7 @@ async function addBarcode() {
   document.getElementById('barcode').value = '';
   if (!code) return;
   try {
-    const r = await fetch('{{ url_for("api_barcode_lookup") }}', {
+    const r = await fetch('{{ url_for("billing.api_barcode_lookup") }}', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ barcode: String(code).trim() })
     });
@@ -744,7 +744,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
   const brand = document.getElementById('sBrand').value.trim();
   const category = document.getElementById('sCategory').value;
   const size = document.getElementById('sSize').value.trim();
-  const r = await fetch('{{ url_for("api_search_products") }}', {
+  const r = await fetch('{{ url_for("billing.api_search_products") }}', {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brand, category, size, limit: 50})
   });
   const j = await r.json(); const box = document.getElementById('sResults'); box.innerHTML='';
@@ -769,7 +769,7 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
 
   if (ph.length === 10) {
     try {
-      const r = await fetch(`{{ url_for("api_customer_last_name") }}?phone=${ph}`);
+      const r = await fetch(`{{ url_for("billing.api_customer_last_name") }}?phone=${ph}`);
       const j = await r.json();
       if (j.ok && j.name) document.getElementById('custName').value = j.name;
     } catch {}
@@ -823,7 +823,7 @@ proceedBtn.addEventListener('click', async ()=>{
       redeem_points: Number(lpRedeem || 0),
       preview: true
     };
-    const res = await fetch('{{ url_for("api_checkout") }}', {
+    const res = await fetch('{{ url_for("billing.api_checkout") }}', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
     });
     const j = await res.json();
@@ -956,7 +956,7 @@ async function doAndroidPrintWithOverride(useTotal){
   };
 
   try {
-    const res = await fetch('{{ url_for("api_checkout") }}', {
+    const res = await fetch('{{ url_for("billing.api_checkout") }}', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(toSave),

@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Invoice History</h2>
 
-<form method="get" action="{{ url_for('history') }}" style="margin-bottom:15px;">
+<form method="get" action="{{ url_for('history.index') }}" style="margin-bottom:15px;">
   <input type="text" name="q" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
   <button type="submit" style="background:#1976d2;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
     Search
@@ -36,7 +36,7 @@
         {% if is_admin %}
           <form class="ajax-update-total"
                 method="post"
-                action="{{ url_for('invoices_update_total', invoice_id=row[0]) }}"
+                action="{{ url_for('history.invoices_update_total', invoice_id=row[0]) }}"
                 style="display:flex; gap:6px; align-items:center;">
             <input type="number" step="0.01" name="grand_total"
                    value="{{ "%.2f"|format(row[4]) }}" style="width:120px; padding:4px;">
@@ -50,7 +50,7 @@
         <td>+{{ row[5]|int }}</td>  <!-- NEW: rewards earned (₹) -->
 
         <td>
-          <a class="btn" href="{{ url_for('reprint', invoice_id=row[0]) }}"
+          <a class="btn" href="{{ url_for('history.reprint', invoice_id=row[0]) }}"
              style="background:#6a1b9a;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
              Reprint
           </a>
@@ -58,7 +58,7 @@
 
         {% if is_admin %}
           <td>
-            <form method="post" action="{{ url_for('invoices_delete', invoice_id=row[0]) }}" onsubmit="return confirm('Delete invoice {{ row[0] }}?');" style="display:inline;">
+            <form method="post" action="{{ url_for('history.invoices_delete', invoice_id=row[0]) }}" onsubmit="return confirm('Delete invoice {{ row[0] }}?');" style="display:inline;">
               <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
             </form>
           </td>
@@ -70,11 +70,11 @@
   {% if rows|length > 0 %}
   <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
     {% if page > 1 %}
-      <a class="btn" href="{{ url_for('history', q=search_term, page=page-1) }}">« Prev</a>
+      <a class="btn" href="{{ url_for('history.index', q=search_term, page=page-1) }}">« Prev</a>
     {% endif %}
     <span>Page {{ page }}</span>
     {% if has_next %}
-      <a class="btn" href="{{ url_for('history', q=search_term, page=page+1) }}">Next »</a>
+      <a class="btn" href="{{ url_for('history.index', q=search_term, page=page+1) }}">Next »</a>
     {% endif %}
   </div>
   {% endif %}
