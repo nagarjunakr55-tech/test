@@ -19,6 +19,8 @@ from billing_logic import (
     REDEEM_CAP,
     EARN_PER_100,
 )
+from threading import Thread
+
 
 billing_bp = Blueprint("billing", __name__)
 
@@ -108,68 +110,55 @@ def api_checkout_prepare():
 
 @billing_bp.post("/api/checkout", endpoint="api_checkout")
 def api_checkout():
+    from threading import Thread
+
     data = request.get_json(silent=True) or {}
 
     cust_name = (data.get("customer_name") or "Guest").strip() or "Guest"
-    phone = (data.get("phone") or "").strip()
+    phone     = (data.get("phone") or "").strip()
+    items     = data.get("items") or []
+    discount  = data.get("discount", "")
+    preview   = bool(data.get("preview"))
+    override_total = data.get("override_grand_total", None)
+    redeem    = int((data.get("redeem_points") or 0) or 0)
+    async_save = bool(data.get("async"))
 
     if not (phone.isdigit() and len(phone) == 10):
         return jsonify({"ok": False, "error": "invalid_phone"}), 400
-
-    items = data.get("items") or []
     if not items:
         return jsonify({"ok": False, "error": "empty_cart"}), 400
 
-    # 1) Calculate regular totals (this enforces discount rules)
     try:
-        totals = calculate_totals(items, data.get("discount", ""))
+        totals = calculate_totals(items, discount)
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
 
-    items_for_receipt = totals.get("items_effective", items)
-    requested_redeem = int(data.get("redeem_points") or 0)
-    is_preview = bool(data.get("preview"))
+    items_eff = totals.get("items_effective", items)
 
-    # 2) Authoritative override (what the cashier typed)
-    override_total = data.get("override_grand_total", None)
-
-    def _coerce_rupees(x):
+    def _rupees(x):
         try:
             return max(0, int(round(float(str(x).strip()))))
         except Exception:
             return None
 
-    original_final = int(round(float(totals.get("grand_total", 0))))
-    effective_final = original_final
-
+    effective_final = int(round(float(totals.get("grand_total", 0))))
     if override_total is not None:
-        coerced = _coerce_rupees(override_total)
+        coerced = _rupees(override_total)
         if coerced is None:
             return jsonify({"ok": False, "error": "Invalid override amount"}), 400
         effective_final = coerced
 
-    # 3) PREVIEW
-    if is_preview:
+    # PREVIEW (no writes)
+    if preview:
         use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
-            phone=phone,
-            grand_total=float(effective_final),
-            requested_redeem=requested_redeem
+            phone=phone, grand_total=float(effective_final), requested_redeem=redeem
         )
-
         invoice_text = generate_invoice_text(
-            invoice_id="",
-            customer_name=cust_name,
-            customer_phone=phone,
-            items=items_for_receipt,
-            subtotal=totals["subtotal"],
-            gst_amount=totals["gst"],
-            grand_total=final_after,
-            discount_amt=totals["discount_amt"],
-            points_used=use_p,
-            points_earned=earn_p,
-            points_balance=bal_p
+            invoice_id="", customer_name=cust_name, customer_phone=phone,
+            items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
+            grand_total=final_after, discount_amt=totals["discount_amt"],
+            points_used=use_p, points_earned=earn_p, points_balance=bal_p
         )
-
         return jsonify({
             "ok": True,
             "invoice_text": invoice_text,
@@ -178,94 +167,59 @@ def api_checkout():
             "points_balance": bal_p
         })
 
-    # 4) FINALIZE
-    async_save = bool(data.get("async"))
+    # FINALIZE
     invoice_id = (data.get("invoice_id") or "").strip() or generate_unique_invoice_id()
 
     used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
-        phone=phone,
-        grand_total=float(effective_final),
-        requested_redeem=requested_redeem
+        phone=phone, grand_total=float(effective_final), requested_redeem=redeem
     )
 
     invoice_text = generate_invoice_text(
-        invoice_id=invoice_id,
-        customer_name=cust_name,
-        customer_phone=phone,
-        items=items_for_receipt,
-        subtotal=totals["subtotal"],
-        gst_amount=totals["gst"],
-        grand_total=final_payable,
-        discount_amt=totals["discount_amt"],
-        points_used=used_pts,
-        points_earned=earned_pts,
-        points_balance=new_balance
+        invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
+        items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
+        grand_total=final_payable, discount_amt=totals["discount_amt"],
+        points_used=used_pts, points_earned=earned_pts, points_balance=new_balance
     )
 
-    if async_save:
+    # >>> Put the final invoice into cache NOW so Android can fetch immediately
+    try:
+        _cache_put(invoice_id, invoice_text)
+    except Exception:
+        pass
+
+    def _persist():
         try:
-            _cache_put(invoice_id, invoice_text)
+            save_to_db(
+                invoice_id=invoice_id,
+                name=cust_name,
+                phone=phone,
+                items=items_eff,
+                subtotal=totals["subtotal"],
+                discount_amt=totals["discount_amt"],
+                gst_amt=totals["gst"],
+                grand_total=final_payable,
+                invoice_text=invoice_text
+            )
+            with get_connection() as conn2, conn2.cursor() as cur2:
+                cur2.execute("""
+                    UPDATE public.sales_history
+                       SET points_earned=%s,
+                           points_redeemed=%s,
+                           points_synced_at=NOW()
+                     WHERE invoice_id=%s
+                """, (earned_pts, used_pts, invoice_id))
+                conn2.commit()
         except Exception:
+            # swallow in background
             pass
 
-        def _persist():
-            try:
-                save_to_db(
-                    invoice_id=invoice_id,
-                    name=cust_name,
-                    phone=phone,
-                    items=items_for_receipt,
-                    subtotal=totals["subtotal"],
-                    discount_amt=totals["discount_amt"],
-                    gst_amt=totals["gst"],
-                    grand_total=final_payable,
-                    invoice_text=invoice_text
-                )
-                with get_connection() as conn2, conn2.cursor() as cur2:
-                    cur2.execute("""
-                        UPDATE public.sales_history
-                           SET points_earned=%s,
-                               points_redeemed=%s,
-                               points_synced_at=NOW()
-                         WHERE invoice_id=%s
-                    """, (earned_pts, used_pts, invoice_id))
-                    conn2.commit()
-            except Exception:
-                pass
-
-        from threading import Thread
+    if async_save:
         Thread(target=_persist, daemon=True).start()
-
-        return jsonify({
-            "ok": True,
-            "invoice_id": invoice_id,
-            "invoice_text": invoice_text,
-            "points_used": used_pts,
-            "points_earned": earned_pts,
-            "points_balance": new_balance
-        })
-
-    # sync save
-    save_to_db(
-        invoice_id=invoice_id,
-        name=cust_name,
-        phone=phone,
-        items=items_for_receipt,
-        subtotal=totals["subtotal"],
-        discount_amt=totals["discount_amt"],
-        gst_amt=totals["gst"],
-        grand_total=final_payable,
-        invoice_text=invoice_text
-    )
-    with get_connection() as conn2, conn2.cursor() as cur2:
-        cur2.execute("""
-            UPDATE public.sales_history
-               SET points_earned=%s,
-                   points_redeemed=%s,
-                   points_synced_at=NOW()
-             WHERE invoice_id=%s
-        """, (earned_pts, used_pts, invoice_id))
-        conn2.commit()
+    else:
+        try:
+            _persist()
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"save_failed: {e}"}), 500
 
     return jsonify({
         "ok": True,
@@ -275,6 +229,8 @@ def api_checkout():
         "points_earned": earned_pts,
         "points_balance": new_balance
     })
+
+
 
 @billing_bp.get("/api/loyalty_points", endpoint="api_loyalty_points")
 def api_loyalty_points():
