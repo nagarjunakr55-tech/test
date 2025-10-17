@@ -135,33 +135,57 @@ def insert_code(brand, size, category, mrp, bought, sp, code: str) -> None:
 def tspl_for_item(code: str, brand: str, size: str,
                   mrp: Optional[float], sp: Optional[float],
                   copies: int = 1) -> str:
-    """
-    Build TSPL for 50.8 x 25 mm label. Copies are embedded so the printer repeats.
-    """
-    lines = []
-    if mrp is not None:
-        try:
-            lines.append(f'TEXT 40,155,"2",0,1,1,"MRP: {int(mrp)}"')
-        except Exception:
-            pass
-    if sp is not None:
-        try:
-            lines.append(f'TEXT 210,155,"2",0,1,1,"SP: {int(sp)}"')
-        except Exception:
-            pass
+    # ---- Layout ----
+    X_MRP_LABEL  = 40
+    X_MRP_DIGITS = 120
+    X_SP_TEXT    = 210                 # label: "ONLY ₹:"
+    Y_PRICE      = 155
+    BAR_Y        = 165
+    BAR_THICK    = 2
+    DIGIT_W      = 12                  # per-digit width for font "2" @1x; tweak 11–13 if needed
 
-    tspl = f"""SIZE 50.8 mm, 25 mm
-GAP 2 mm, 0 mm
-DIRECTION 1
-CLS
-TEXT 120,5,"3",0,1,1,"DRIP"
-BARCODE 40,40,"128",50,1,0,2,2,"{code}"
-TEXT 40,125,"2",0,1,1,"{brand}"
-TEXT 210,125,"2",0,1,1,"Size: {size}"
-{os.linesep.join(lines)}
-PRINT {max(1, int(copies))},1
-"""
-    return tspl
+    # SP (ONLY ₹) digits placement (bigger, so give more right padding than "SP:")
+    X_SP_DIGITS  = X_SP_TEXT + 100     # 100 works well for "ONLY ₹:"; tweak 95–110 if needed
+    SP_Y         = Y_PRICE - 6         # drop a bit so big digits align with label baseline
+
+    lines = [
+        "SIZE 50.8 mm, 25 mm",
+        "GAP 2 mm, 0 mm",
+        "DIRECTION 1",
+        "CLS",
+        "SETMAG 1,1",  # clear any global magnification
+        'TEXT 120,5,"3",0,1,1,"DRIP"',
+        f'BARCODE 40,40,"128",50,1,0,2,2,"{code}"',
+        f'TEXT 40,125,"2",0,1,1,"{brand}"',
+        f'TEXT 210,125,"2",0,1,1,"Size: {size}"',
+    ]
+
+    # ---- MRP (font "2", 1x1) + strike only digits ----
+    if mrp is not None:
+        mrp_digits = str(int(mrp))
+        lines.append(f'TEXT {X_MRP_LABEL},{Y_PRICE},"2",0,1,1,"MRP:"')
+        lines.append(f'TEXT {X_MRP_DIGITS},{Y_PRICE},"2",0,1,1,"{mrp_digits}"')
+        bar_w = max(1, len(mrp_digits) * DIGIT_W)
+        lines.append(f'BAR {X_MRP_DIGITS},{BAR_Y},{bar_w},{BAR_THICK}')
+
+    # ---- ONLY ₹: label small, digits bigger (font "2", 2x2) ----
+    if sp is not None:
+        sp_digits = str(int(sp))
+        lines.append(f'TEXT {X_SP_TEXT},{Y_PRICE},"2",0,1,1,"Offer:"')
+        lines.append(f'TEXT {X_SP_DIGITS},{SP_Y},"2",0,2,2,"{sp_digits}"')
+
+    lines.append(f"PRINT {max(1, int(copies))},1")
+    return '\n'.join(lines)
+
+
+
+
+
+
+
+
+
+
 
 
 def print_tspl_windows(tspl_text: str, printer_name: str) -> None:
