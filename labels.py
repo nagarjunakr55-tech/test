@@ -138,26 +138,34 @@ def tspl_for_item(code: str, brand: str, size: str,
     # ---- Layout ----
     X_MRP_LABEL  = 40
     X_MRP_DIGITS = 120
-    X_SP_TEXT    = 210                 # label: "ONLY ₹:"
+    X_SP_TEXT    = 190                 # label: "ONLY Rs:"
     Y_PRICE      = 155
     BAR_Y        = 165
     BAR_THICK    = 2
-    DIGIT_W      = 12                  # per-digit width for font "2" @1x; tweak 11–13 if needed
+    DIGIT_W      = 12                  # per-digit width for MRP strike (font "2" @1x)
 
-    # SP (ONLY ₹) digits placement (bigger, so give more right padding than "SP:")
-    X_SP_DIGITS  = X_SP_TEXT + 100     # 100 works well for "ONLY ₹:"; tweak 95–110 if needed
-    SP_Y         = Y_PRICE - 6         # drop a bit so big digits align with label baseline
+    # --- Width helper for TSPL font "2" @1x (203 dpi). Tweak a value by ±1 if needed.
+    FONT2_WIDTHS = {
+        "0":12,"1":8,"2":12,"3":12,"4":12,"5":12,"6":12,"7":11,"8":12,"9":12,
+        "A":12,"B":12,"C":12,"D":12,"E":12,"F":12,"G":12,"H":12,"I":8,"J":12,"K":12,"L":12,"M":12,"N":12,
+        "O":12,"P":12,"Q":12,"R":12,"S":12,"T":12,"U":12,"V":12,"W":12,"X":12,"Y":12,"Z":12,
+        "a":12,"b":12,"c":12,"d":12,"e":12,"f":8,"g":12,"h":12,"i":6,"j":8,"k":11,"l":6,"m":18,"n":12,
+        "o":12,"p":12,"q":12,"r":9,"s":11,"t":8,"u":12,"v":11,"w":16,"x":11,"y":11,"z":11,
+        " ":6, ":":6
+    }
+    def w2(text: str) -> int:
+        return sum(FONT2_WIDTHS.get(ch, 12) for ch in text)
 
     lines = [
         "SIZE 50.8 mm, 25 mm",
         "GAP 2 mm, 0 mm",
         "DIRECTION 1",
         "CLS",
-        "SETMAG 1,1",  # clear any global magnification
+        "SETMAG 1,1",
         'TEXT 120,5,"3",0,1,1,"DRIP"',
         f'BARCODE 40,40,"128",50,1,0,2,2,"{code}"',
         f'TEXT 40,125,"2",0,1,1,"{brand}"',
-        f'TEXT 210,125,"2",0,1,1,"Size: {size}"',
+        f'TEXT 190,125,"2",0,1,1,"Size: {size}"',
     ]
 
     # ---- MRP (font "2", 1x1) + strike only digits ----
@@ -168,14 +176,20 @@ def tspl_for_item(code: str, brand: str, size: str,
         bar_w = max(1, len(mrp_digits) * DIGIT_W)
         lines.append(f'BAR {X_MRP_DIGITS},{BAR_Y},{bar_w},{BAR_THICK}')
 
-    # ---- ONLY ₹: label small, digits bigger (font "2", 2x2) ----
+    # ---- ONLY Rs: + big digits (tight) ----
     if sp is not None:
         sp_digits = str(int(sp))
-        lines.append(f'TEXT {X_SP_TEXT},{Y_PRICE},"2",0,1,1,"Offer:"')
+        label = "HERE:  "
+        # print the label (small)
+        lines.append(f'TEXT {X_SP_TEXT},{Y_PRICE},"2",0,1,1,"{label}"')
+        # compute tight start X for big digits right after the label
+        X_SP_DIGITS = X_SP_TEXT + w2(label) + 2   # +2px breathing room
+        SP_Y        = Y_PRICE - 6                 # slight vertical tweak for 2×2
         lines.append(f'TEXT {X_SP_DIGITS},{SP_Y},"2",0,2,2,"{sp_digits}"')
 
     lines.append(f"PRINT {max(1, int(copies))},1")
     return '\n'.join(lines)
+
 
 
 
