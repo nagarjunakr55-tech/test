@@ -137,12 +137,11 @@ def tspl_for_item(code: str, brand: str, size: str,
                   copies: int = 1) -> str:
     # ---- Layout ----
     X_MRP_LABEL  = 40
-    X_MRP_DIGITS = 120
-    X_SP_TEXT    = 190                 # label: "ONLY Rs:"
+    X_SP_TEXT    = 190           # "ONLY Rs:" label start
     Y_PRICE      = 155
     BAR_Y        = 165
     BAR_THICK    = 2
-    DIGIT_W      = 12                  # per-digit width for MRP strike (font "2" @1x)
+    DIGIT_W      = 12            # per-digit width for strike line (font "2" @1x)
 
     # --- Width helper for TSPL font "2" @1x (203 dpi). Tweak a value by ±1 if needed.
     FONT2_WIDTHS = {
@@ -153,6 +152,7 @@ def tspl_for_item(code: str, brand: str, size: str,
         "o":12,"p":12,"q":12,"r":9,"s":11,"t":8,"u":12,"v":11,"w":16,"x":11,"y":11,"z":11,
         " ":6, ":":6
     }
+
     def w2(text: str) -> int:
         return sum(FONT2_WIDTHS.get(ch, 12) for ch in text)
 
@@ -171,33 +171,27 @@ def tspl_for_item(code: str, brand: str, size: str,
     # ---- MRP (font "2", 1x1) + strike only digits ----
     if mrp is not None:
         mrp_digits = str(int(mrp))
+        # Print label and digits with tight spacing
         lines.append(f'TEXT {X_MRP_LABEL},{Y_PRICE},"2",0,1,1,"MRP:"')
+        X_MRP_DIGITS = X_MRP_LABEL + w2("MRP:") + 1  # +1 pixel gap after colon
         lines.append(f'TEXT {X_MRP_DIGITS},{Y_PRICE},"2",0,1,1,"{mrp_digits}"')
+        # Strike only the digits
         bar_w = max(1, len(mrp_digits) * DIGIT_W)
         lines.append(f'BAR {X_MRP_DIGITS},{BAR_Y},{bar_w},{BAR_THICK}')
 
     # ---- ONLY Rs: + big digits (tight) ----
     if sp is not None:
         sp_digits = str(int(sp))
-        label = "HERE:  "
-        # print the label (small)
+        label = "ONLY Rs: "
+        # print label (small)
         lines.append(f'TEXT {X_SP_TEXT},{Y_PRICE},"2",0,1,1,"{label}"')
-        # compute tight start X for big digits right after the label
+        # compute tight start X for big digits
         X_SP_DIGITS = X_SP_TEXT + w2(label) + 2   # +2px breathing room
-        SP_Y        = Y_PRICE - 6                 # slight vertical tweak for 2×2
+        SP_Y        = Y_PRICE - 6                 # slight vertical tweak for 2×2 digits
         lines.append(f'TEXT {X_SP_DIGITS},{SP_Y},"2",0,2,2,"{sp_digits}"')
 
     lines.append(f"PRINT {max(1, int(copies))},1")
-    return '\n'.join(lines)
-
-
-
-
-
-
-
-
-
+    return "\n".join(lines)
 
 
 
