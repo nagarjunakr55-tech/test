@@ -134,7 +134,7 @@ def create_app() -> Flask:
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
         expected = os.getenv("ADMIN_PIN", "5175")
-        nxt = request.form.get("next") or request.referrer or url_for("history")
+        nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
         if pin == expected:
             session["is_admin"] = True
             return redirect(nxt)
