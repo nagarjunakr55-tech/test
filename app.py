@@ -147,7 +147,7 @@ def create_app() -> Flask:
     @app.post("/admin/logout")
     def admin_logout():
         session["is_admin"] = False
-        nxt = request.form.get("next") or request.referrer or url_for("history")
+        nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
         return redirect(nxt)
 
     # -----------------------------
