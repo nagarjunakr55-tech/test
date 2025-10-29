@@ -182,7 +182,7 @@ def tspl_for_item(code: str, brand: str, size: str,
     # ---- ONLY Rs: + big digits (tight) ----
     if sp is not None:
         sp_digits = str(int(sp))
-        label = "ONLY: "
+        label = "ONLY:  "
         # print label (small)
         lines.append(f'TEXT {X_SP_TEXT},{Y_PRICE},"2",0,1,1,"{label}"')
         # compute tight start X for big digits
