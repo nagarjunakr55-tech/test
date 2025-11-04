@@ -37,14 +37,21 @@ _POOL = ThreadedConnectionPool(
 
 
 def _configure_session(conn):
-    """Cheap per-checkout tweaks; ignore if not supported."""
+    """Cheap per-checkout tweaks; run only once per raw connection."""
     try:
+        # avoid repeat configuration (attach a flag on the raw connection)
+        if getattr(conn, "_drip_configured", False):
+            return
         with conn.cursor() as cur:
             cur.execute("SET application_name = 'drip';")
             cur.execute("SET statement_timeout = 5000;")                    # 5s
             cur.execute("SET idle_in_transaction_session_timeout = 5000;")  # 5s
+        # mark configured so subsequent checkouts skip the SETs
+        conn._drip_configured = True
     except Exception:
+        # non-fatal; leave unmarked so we may try later
         pass
+
 
 
 class PooledConn:
