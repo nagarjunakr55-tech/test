@@ -11,26 +11,28 @@
 {% endif %}
 
 <div class="table-responsive" style="margin-top:12px;">
-  <table>
+  <table style="width:100%; border-collapse:collapse;">
     <thead>
-      <tr>
-        <th>Brand</th>
-        <th>Size</th>
-        <th>Category</th>
-        <th>Printed</th>
-        <th>Sold</th>
-        <th>Available</th>
+      <tr style="text-align:left; border-bottom:1px solid #eee;">
+        <th style="padding:8px 10px;">Brand</th>
+        <th style="padding:8px 10px;">Size</th>
+        <th style="padding:8px 10px;">Category</th>
+        <th style="padding:8px 10px;">Code</th>
+        <th style="padding:8px 10px;">Printed</th>
+        <th style="padding:8px 10px;">Sold</th>
+        <th style="padding:8px 10px;">Available</th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
-        <tr>
-          <td>{{ r[0] }}</td>
-          <td>{{ r[1] }}</td>
-          <td>{{ r[2] }}</td>
-          <td>{{ r[3] }}</td>
-          <td>{{ r[4] }}</td>
-          <td>{{ r[5] }}</td>
+        <tr style="border-bottom:1px solid #fafafa;">
+          <td style="padding:8px 10px;">{{ r[0] }}</td>
+          <td style="padding:8px 10px;">{{ r[1] }}</td>
+          <td style="padding:8px 10px;">{{ r[2] }}</td>
+          <td style="padding:8px 10px;"><code>{{ r[3] }}</code></td>
+          <td style="padding:8px 10px;">{{ r[4] }}</td>
+          <td style="padding:8px 10px;">{{ r[5] }}</td>
+          <td style="padding:8px 10px;">{{ r[6] }}</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -38,6 +40,6 @@
 </div>
 
 {% if rows|length == 0 %}
-  <p>No data yet.</p>
+  <p style="margin-top:12px;">No data yet.</p>
 {% endif %}
 {% endblock %}

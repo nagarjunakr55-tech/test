@@ -8,11 +8,11 @@ inventory_bp = Blueprint("inventory", __name__, url_prefix="/inventory")
 @inventory_bp.get("/")
 def inventory_page():
     """
-    Show Brand | Size | Category | Printed | Sold | Available
-    - Printed is total labels ever printed (does NOT change when sold).
-    - Sold is total qty sold.
-    - Available = Printed - Sold (can be negative only if you sold more than you printed).
-    - Uses barcode_print_events if available (accurate copies). Otherwise, assumes 1 per code.
+    Show Brand | Size | Category | Code | Printed | Sold | Available
+    - Printed is total labels ever printed for that code (uses barcode_print_events if present,
+      otherwise defaults to 1 per code).
+    - Sold is total qty sold for that code (from sales_barcodes).
+    - Available = Printed - Sold.
     """
     rows = []
     using_events = False
@@ -21,100 +21,58 @@ def inventory_page():
         with conn.cursor() as cur:
             # Try the accurate path first (needs public.barcode_print_events)
             try:
-                # printed_by_code: total copies per code from events
-                # sold_by_code:    total qty per code from sales_barcodes
-                # Then roll both up *separately* to (brand,size,category),
-                # and only then join — this avoids row multiplication.
                 cur.execute("""
                     WITH printed_by_code AS (
-                        SELECT code, SUM(copies)::int AS printed_qty
-                        FROM public.barcode_print_events
-                        GROUP BY code
+                      SELECT code, SUM(copies)::int AS printed_qty
+                      FROM public.barcode_print_events
+                      GROUP BY code
                     ),
                     sold_by_code AS (
-                        SELECT code, SUM(qty)::int AS sold_qty
-                        FROM public.sales_barcodes
-                        GROUP BY code
-                    ),
-
-                    printed_by_group AS (
-                        SELECT bc.brand, bc.size, bc.category,
-                               COALESCE(SUM(p.printed_qty), 0)::int AS printed_qty
-                        FROM public.barcode_catalog bc
-                        LEFT JOIN printed_by_code p
-                               ON p.code = bc.barcode_data
-                        GROUP BY bc.brand, bc.size, bc.category
-                    ),
-
-                    sold_by_group AS (
-                        SELECT bc.brand, bc.size, bc.category,
-                               COALESCE(SUM(s.sold_qty), 0)::int AS sold_qty
-                        FROM public.barcode_catalog bc
-                        LEFT JOIN sold_by_code s
-                               ON s.code = bc.barcode_data
-                        GROUP BY bc.brand, bc.size, bc.category
+                      SELECT code, SUM(qty)::int AS sold_qty
+                      FROM public.sales_barcodes
+                      GROUP BY code
                     )
-
-                    SELECT g.brand,
-                           g.size,
-                           g.category,
-                           COALESCE(pb.printed_qty, 0) AS printed_qty,
-                           COALESCE(sb.sold_qty,    0) AS sold_qty,
-                           COALESCE(pb.printed_qty, 0) - COALESCE(sb.sold_qty, 0) AS available_qty
-                    FROM (
-                        SELECT DISTINCT brand, size, category
-                        FROM public.barcode_catalog
-                    ) g
-                    LEFT JOIN printed_by_group pb
-                           ON pb.brand = g.brand AND pb.size = g.size AND pb.category = g.category
-                    LEFT JOIN sold_by_group sb
-                           ON sb.brand = g.brand AND sb.size = g.size AND sb.category = g.category
-                    ORDER BY g.brand, g.category, g.size
+                    SELECT
+                      bc.brand,
+                      bc.size,
+                      bc.category,
+                      bc.barcode_data AS code,
+                      -- if there is an event use its sum, otherwise default to 1
+                      COALESCE(p.printed_qty, 1)::int AS printed_qty,
+                      COALESCE(s.sold_qty, 0)::int AS sold_qty,
+                      COALESCE(p.printed_qty, 1)::int - COALESCE(s.sold_qty, 0)::int AS available_qty
+                    FROM public.barcode_catalog bc
+                    LEFT JOIN printed_by_code p ON p.code = bc.barcode_data
+                    LEFT JOIN sold_by_code    s ON s.code = bc.barcode_data
+                    ORDER BY bc.brand, bc.category, bc.size, bc.barcode_data;
                 """)
                 rows = cur.fetchall()
                 using_events = True
 
             except Exception:
-                # Fallback: if events table doesn't exist → printed = count of codes (1 per code)
+                # Fallback: events table missing → printed = 1 per code
                 current_app.logger.warning("inventory: events table missing; using fallback (1 label per code)")
                 cur.execute("""
                     WITH sold_by_code AS (
-                        SELECT code, SUM(qty)::int AS sold_qty
-                        FROM public.sales_barcodes
-                        GROUP BY code
-                    ),
-                    printed_by_group AS (
-                        -- 1 label per code
-                        SELECT bc.brand, bc.size, bc.category,
-                               COUNT(bc.barcode_data)::int AS printed_qty
-                        FROM public.barcode_catalog bc
-                        GROUP BY bc.brand, bc.size, bc.category
-                    ),
-                    sold_by_group AS (
-                        SELECT bc.brand, bc.size, bc.category,
-                               COALESCE(SUM(s.sold_qty), 0)::int AS sold_qty
-                        FROM public.barcode_catalog bc
-                        LEFT JOIN sold_by_code s
-                               ON s.code = bc.barcode_data
-                        GROUP BY bc.brand, bc.size, bc.category
+                      SELECT code, SUM(qty)::int AS sold_qty
+                      FROM public.sales_barcodes
+                      GROUP BY code
                     )
-                    SELECT g.brand,
-                           g.size,
-                           g.category,
-                           COALESCE(pb.printed_qty, 0) AS printed_qty,
-                           COALESCE(sb.sold_qty,    0) AS sold_qty,
-                           COALESCE(pb.printed_qty, 0) - COALESCE(sb.sold_qty, 0) AS available_qty
-                    FROM (
-                        SELECT DISTINCT brand, size, category
-                        FROM public.barcode_catalog
-                    ) g
-                    LEFT JOIN printed_by_group pb
-                           ON pb.brand = g.brand AND pb.size = g.size AND pb.category = g.category
-                    LEFT JOIN sold_by_group sb
-                           ON sb.brand = g.brand AND sb.size = g.size AND sb.category = g.category
-                    ORDER BY g.brand, g.category, g.size
+                    SELECT
+                      bc.brand,
+                      bc.size,
+                      bc.category,
+                      bc.barcode_data AS code,
+                      COUNT(bc.barcode_data)::int AS printed_qty,  -- this will be 1 per row, but kept for clarity
+                      COALESCE(s.sold_qty, 0)::int AS sold_qty,
+                      COUNT(bc.barcode_data)::int - COALESCE(s.sold_qty, 0)::int AS available_qty
+                    FROM public.barcode_catalog bc
+                    LEFT JOIN sold_by_code s ON s.code = bc.barcode_data
+                    GROUP BY bc.brand, bc.size, bc.category, bc.barcode_data, s.sold_qty
+                    ORDER BY bc.brand, bc.category, bc.size, bc.barcode_data;
                 """)
                 rows = cur.fetchall()
                 using_events = False
 
     return render_template("inventory.html", rows=rows, using_events=using_events)
+

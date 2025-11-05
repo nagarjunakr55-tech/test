@@ -94,6 +94,98 @@ def ensure_print_events_table():
             )
         conn.commit()
     '''
+import psycopg2  # add near top of file if not present
+
+def insert_print_event(code: str, copies: int = 1, how: Optional[str] = None) -> int:
+    """
+    Upsert the exact provided `copies` for `code` (replace existing value).
+    Returns stored copies.
+    Tries atomic ON CONFLICT upsert first; falls back to serialized select/update/insert
+    if Postgres rejects the ON CONFLICT (e.g., no unique constraint available).
+    """
+    if not code:
+        raise ValueError("missing code")
+
+    code_u = (code or "").strip().upper()
+    try:
+        copies_i = int(copies or 1)
+    except Exception:
+        copies_i = 1
+    if copies_i < 1:
+        copies_i = 1
+
+    # Attempt atomic upsert
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO public.barcode_print_events (code, copies, how, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (code) DO UPDATE
+                      SET copies = EXCLUDED.copies,
+                          how = EXCLUDED.how,
+                          created_at = EXCLUDED.created_at
+                    RETURNING copies
+                """, (code_u, copies_i, how, now_ist()))
+                row = cur.fetchone()
+            conn.commit()
+        return int(row[0]) if row else copies_i
+
+    except psycopg2.errors.InvalidColumnReference as icr:
+        # This is the "there is no unique ... matching the ON CONFLICT" error (42P10).
+        # Fall back to serialized update/insert approach.
+        current_app.logger.warning("Upsert ON CONFLICT(code) not available; falling back: %s", icr)
+
+    except Exception as e:
+        # For any other error, log and re-raise (or optionally fall back).
+        current_app.logger.exception("insert_print_event upsert failed (non-ONCONFLICT)")
+        # Optionally choose to fall back here as well; we'll fall back below.
+    
+    # Fallback path: advisory lock + seq sync + select -> update/insert
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                ADVISORY_KEY = 987654321
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (ADVISORY_KEY,))
+
+                # try to keep sequence sane (non-fatal)
+                try:
+                    cur.execute("SELECT COALESCE(MAX(id), 0) FROM public.barcode_print_events")
+                    max_id = cur.fetchone()[0] or 0
+                    cur.execute(
+                        "SELECT setval(pg_get_serial_sequence('public.barcode_print_events','id'), %s)",
+                        (max_id,)
+                    )
+                except Exception:
+                    current_app.logger.debug("sequence sync failed in fallback", exc_info=True)
+
+                # check existing row for code
+                cur.execute("SELECT id FROM public.barcode_print_events WHERE code = %s LIMIT 1", (code_u,))
+                row = cur.fetchone()
+                if row:
+                    row_id = row[0]
+                    cur.execute("""
+                        UPDATE public.barcode_print_events
+                           SET copies = %s, how = %s, created_at = %s
+                         WHERE id = %s
+                    """, (copies_i, how, now_ist(), row_id))
+                    stored = copies_i
+                else:
+                    cur.execute("""
+                        INSERT INTO public.barcode_print_events (code, copies, how, created_at)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING copies
+                    """, (code_u, copies_i, how, now_ist()))
+                    rr = cur.fetchone()
+                    stored = int(rr[0]) if rr and rr[0] is not None else copies_i
+            conn.commit()
+        return int(stored)
+    except Exception:
+        current_app.logger.exception("Fallback insert/update in insert_print_event failed")
+        raise
+
+
+
 
 
 # --- Catalog ops --------------------------------------------------------------
@@ -209,6 +301,50 @@ def print_tspl_windows(tspl_text: str, printer_name: str) -> None:
         win32print.EndDocPrinter(hPrinter)
     finally:
         win32print.ClosePrinter(hPrinter)
+
+@labels_bp.post("/print_event", endpoint="print_event")
+def print_event():
+    """
+    Accepts JSON {code, copies, how} and inserts/updates barcode_print_events.
+    Returns JSON {ok: True, printed_total: <int>} on success.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        code = (data.get("code") or "").strip().upper()
+        if not code:
+            return jsonify(ok=False, error="missing_code"), 400
+
+        try:
+            copies = int(data.get("copies") or 1)
+            if copies < 1:
+                copies = 1
+        except Exception:
+            copies = 1
+
+        how = (data.get("how") or "").strip()
+
+        # Basic validation for code format (same pattern used elsewhere)
+        if not CODE_RE.match(code):
+            return jsonify(ok=False, error="invalid_code"), 400
+
+        # Use insert_print_event which should upsert and RETURN the stored copies
+        try:
+            stored = insert_print_event(code, copies, how)  # expected to return int
+        except Exception:
+            current_app.logger.exception("insert_print_event failed")
+            return jsonify(ok=False, error="db_error"), 500
+
+        # Ensure we always return an integer printed_total (fallback to copies)
+        try:
+            printed_total = int(stored) if stored is not None else int(copies)
+        except Exception:
+            printed_total = int(copies)
+
+        return jsonify(ok=True, printed_total=printed_total), 200
+
+    except Exception as e:
+        current_app.logger.exception("print_event crashed")
+        return jsonify(ok=False, error=str(e)), 500
 
 
 # --- Routes: page -------------------------------------------------------------

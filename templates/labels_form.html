@@ -116,56 +116,83 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
 </form>
 
 {% if recent_rows %}
-  
   <input type="text" id="tableSearch" placeholder="Search barcodes..."
-       style="margin:12px 0; padding:8px 12px; width:100%; max-width:200px; font-size:15px;">
+         style="margin:12px 0; padding:8px 12px; width:100%; max-width:200px; font-size:15px;">
   <table class="barcode-list">
     <thead>
-  <tr>
-    <th>Action</th><th>Brand</th><th>MRP</th><th>Bought</th><th>SP</th>
-    <th>Size</th><th>Category</th><th>Code</th><th>Date</th>
-    {% if is_admin %}<th>Delete</th>{% endif %}
-  </tr>
-</thead>
+      <tr>
+        <th>Action</th>
+        <th>Brand</th>
+        <th>MRP</th>
+        <th>Bought</th>
+        <th>SP</th>
+        <th>Size</th>
+        <th>Category</th>
+        <th>Code</th>
+        <th>Date</th>
+        <th>Save</th>
+        {% if is_admin %}<th>Delete</th>{% endif %}
+      </tr>
     </thead>
-    <tbody>
-  {% for r in recent_rows %}
-  <tr>
-    <td>
-      <button class="btn" type="button"
-              onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
-        Re-use
-      </button>
-    </td>
-    <td>{{ r[0] }}</td>
-    <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
-    <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
-    <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
-    <td>{{ r[4] }}</td>
-    <td>{{ r[5] }}</td>
-    <td><code>{{ r[6] }}</code></td>
-    <td>
-      {% if r[7] %}
-        {{ r[7].strftime("%d-%m-%Y") }}
-      {% endif %}
-    </td>
-    
-    {% if is_admin %}
-    <td>
-      <form method="post"
-            action="{{ url_for('labels.barcodes_delete', code=r[6]) }}"
-            onsubmit="return confirm('Delete barcode {{ r[6] }}?');"
-            style="display:inline;">
-        <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
-      </form>
-    </td>
-    {% endif %}
-  </tr>
-  {% endfor %}
-</tbody>
 
+    <tbody>
+      {% for r in recent_rows %}
+      <tr>
+        <!-- Re-use button -->
+        <td>
+          <button class="btn" type="button"
+                  onclick="reuseFill('{{ r[0]|e }}','{{ (r[1] or '')|e }}','{{ (r[2] or '')|e }}','{{ (r[3] or '')|e }}','{{ r[4]|e }}','{{ r[5]|e }}')">
+            Re-use
+          </button>
+        </td>
+
+        <!-- Data columns -->
+        <td>{{ r[0] }}</td>
+        <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
+        <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
+        <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
+        <td>{{ r[4] }}</td>
+        <td>{{ r[5] }}</td>
+        <td><code>{{ r[6] }}</code></td>
+
+        <!-- Date -->
+        <td>
+          {% if r[7] %}
+            {{ r[7].strftime("%d-%m-%Y") }}
+          {% endif %}
+        </td>
+
+        <!-- Save (before Delete) -->
+        <td style="display:flex; gap:6px; align-items:center;">
+          <input type="number" min="1" value="1" class="rowCopies"
+                 style="width:64px; padding:6px; font-size:13px; border-radius:6px; border:1px solid #ddd;" />
+
+          <button class="btn save-print-event" type="button"
+                  data-code="{{ r[6] }}" title="Save print event">
+            Save
+          </button>
+
+          <span class="saveStatus" aria-hidden="true"
+                style="margin-left:6px; font-size:13px;"></span>
+        </td>
+
+        <!-- Delete (admin only) -->
+        {% if is_admin %}
+        <td>
+          <form method="post"
+                action="{{ url_for('labels.barcodes_delete', code=r[6]) }}"
+                onsubmit="return confirm('Delete barcode {{ r[6] }}?');"
+                style="display:inline;">
+            <button class="btn" type="submit" style="background:#d32f2f;">Delete</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
 {% endif %}
+
 
 <script>
 (function () {
@@ -416,6 +443,75 @@ document.getElementById("tableSearch")?.addEventListener("input", function () {
     row.style.display = text.includes(query) ? "" : "none";
   });
 });
+
+  // --- after your existing URL constants ---
+  const URL_PRINT_EVENT = {{ url_for('labels.print_event') | tojson }};
+
+  // Attach handler (delegated in case table is re-rendered)
+  document.querySelectorAll(".save-print-event").forEach(btn => {
+    btn.addEventListener("click", async (ev) => {
+      const b = ev.currentTarget;
+      const tr = b.closest("tr");
+      const code = b.dataset.code?.trim();
+      const copiesInput = tr.querySelector(".rowCopies");
+      const statusSpan = tr.querySelector(".saveStatus");
+
+      statusSpan.textContent = "";
+      if (!code) {
+        statusSpan.textContent = "Missing code";
+        statusSpan.style.color = "#d32f2f";
+        return;
+      }
+
+      let copies = 1;
+      if (copiesInput && copiesInput.value) {
+        copies = parseInt(copiesInput.value, 10) || 1;
+        if (copies < 1) copies = 1;
+      }
+
+      // optional: set how='manual' to indicate it was saved via UI
+      const payload = { code, copies, how: "manual" };
+
+      b.disabled = true;
+      const prevText = b.textContent;
+      b.textContent = "Saving...";
+      statusSpan.textContent = "";
+
+      try {
+        const resp = await fetch(URL_PRINT_EVENT, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(payload)
+        });
+
+        const text = await resp.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch (_) {}
+
+        if (!resp.ok) {
+          const err = (json && json.error) ? json.error : text.slice(0,200);
+          statusSpan.textContent = "Error: " + err;
+          statusSpan.style.color = "#d32f2f";
+        } else if (json && json.ok) {
+          statusSpan.textContent = "Saved";
+          statusSpan.style.color = "#2e7d32";
+          // optionally disable further edits for a moment
+          setTimeout(() => { statusSpan.textContent = ""; }, 2000);
+        } else {
+          statusSpan.textContent = "Unexpected response";
+          statusSpan.style.color = "#d32f2f";
+        }
+      } catch (err) {
+        statusSpan.textContent = "Network error";
+        statusSpan.style.color = "#d32f2f";
+      } finally {
+        b.disabled = false;
+        b.textContent = prevText;
+      }
+    });
+  });
+
+
 
 </script>
 {% endblock %}
