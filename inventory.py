@@ -44,7 +44,7 @@ def inventory_page():
                     FROM public.barcode_catalog bc
                     LEFT JOIN printed_by_code p ON p.code = bc.barcode_data
                     LEFT JOIN sold_by_code    s ON s.code = bc.barcode_data
-                    ORDER BY bc.brand DESC, bc.category DESC, bc.size DESC, bc.barcode_data DESC;
+                    ORDER BY bc.created_at DESC;
                 """)
                 rows = cur.fetchall()
                 using_events = True
@@ -69,7 +69,7 @@ def inventory_page():
                     FROM public.barcode_catalog bc
                     LEFT JOIN sold_by_code s ON s.code = bc.barcode_data
                     GROUP BY bc.brand, bc.size, bc.category, bc.barcode_data, s.sold_qty
-                    ORDER BY bc.brand DESC, bc.category DESC, bc.size DESC, bc.barcode_data DESC;
+                    ORDER BY bc.created_at DESC;
                 """)
                 rows = cur.fetchall()
                 using_events = False
