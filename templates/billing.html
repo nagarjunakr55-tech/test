@@ -996,18 +996,46 @@ async function doAndroidPrintWithOverride(useTotal){
     const smsText = buildSmsText(name, useTotal, estEarn);
 
     // If running inside the DRIP Android WebView, use the bridge
+        // If running inside the DRIP Android WebView, use the bridge (correct args + small wait)
     if (typeof window.DRIP === 'object' && typeof window.DRIP.printReceiptUrl !== 'undefined') {
       try {
-        // Ask native to fetch /receipt/lines/<invoiceId>.txt and print
-        window.DRIP.printReceiptUrl(base, invoiceId);
+        // Correct parameter order expected by native: (invoiceId, smsTo, smsText)
+        // We pass invoiceId, phone (sms_to), and smsText.
+        try {
+          window.DRIP.printReceiptUrl(String(invoiceId), String(phone || ''), String(smsText || ''));
+        } catch (e) {
+          // Some older WebView shims throw synchronously; log and continue to fallback.
+          console.warn('DRIP.printReceiptUrl threw synchronously', e);
+        }
+
+        // Give the native bridge a short moment to receive the call before we navigate away.
+        // Native should call window.onPrintResult(...) when done — so we don't force navigation.
         btn.textContent = 'Sent to printer';
-        // native will call window.onPrintResult(success, errMessage) when done
+        // fallback navigation (in case native didn't handle it) after 400ms
+        setTimeout(() => {
+          try {
+            // only do fallback if onPrintResult hasn't been called (we can't detect that here reliably),
+            // but this delay avoids killing the JS->native call immediately.
+            const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
+                             `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
+            window.location.href = deeplink;
+            const intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
+                              `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
+                              `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + invoiceId)};end`;
+            // try replace then fallback to reprint route later
+            try { window.location.replace(intentUrl); } catch {}
+            setTimeout(()=>{ try { window.location.href = base + '/reprint/' + invoiceId; } catch {} }, 1000);
+          } catch (e) { /* swallow */ }
+        }, 400);
+
+        // return immediately — native flow should proceed; fallback will happen after timeout if needed.
         return;
       } catch (e) {
-        console.warn('DRIP.printReceiptUrl failed', e);
-        // fallthrough to the old deeplink fallback
+        console.warn('DRIP.printReceiptUrl failed outer', e);
+        // fallthrough to the old deeplink fallback (redundant, but safe)
       }
     }
+
 
     // Browser fallback: keep existing deep-link + intent approach
     const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
