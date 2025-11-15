@@ -1022,5 +1022,23 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
     window.history.replaceState({}, '', clean);
   }
 })();
+    function nativePrintInvoice(invoiceId) {
+  if (window.DripBridge && window.DripBridge.printReceipt) {
+    const cbName = "onNativePrintResult_" + Date.now().toString(36);
+    window[cbName] = function(success, msg) {
+      console.log("nativePrintResult", success, msg);
+      try { delete window[cbName]; } catch(_) {}
+    };
+    window.DripBridge.printReceipt(invoiceId, "", cbName);
+    return true;
+  }
+  return false;
+}
+
+// Example usage: after your server returns invoice_id, call:
+if (!nativePrintInvoice("INV1234")) {
+  // fallback for normal browser users
+  window.location.href = `drip://receipt?code=${encodeURIComponent("INV1234")}&base=${encodeURIComponent(location.origin)}`;
+}
 </script>
 {% endblock %}
