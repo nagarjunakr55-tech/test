@@ -230,17 +230,59 @@ function money(n){ return '₹' + (Number(n||0).toFixed(2)); }
 /* =========================
    Scanner deep link wiring
    ========================= */
+/* =========================
+   WebView / Android bridge helpers
+   ========================= */
+
+function isInDripApp() {
+  return typeof window.DRIP === 'object' && typeof window.DRIP.printReceiptUrl !== 'undefined';
+}
+
+// Default print result handler (pages can override)
+window.onPrintResult = window.onPrintResult || function(success, errMessage) {
+  if (success) {
+    alert('Printed successfully');
+  } else {
+    alert('Print failed: ' + (errMessage || 'unknown'));
+  }
+};
+
+// Bridge barcode callback handler: when app returns scanned code it will call this
+window.onBarcodeScanned = window.onBarcodeScanned || function(code) {
+  if (!code) {
+    alert('Scan cancelled');
+    return;
+  }
+  // Put code into barcode input and trigger lookup
+  document.getElementById('barcode').value = code;
+  if (typeof addBarcode === 'function') addBarcode();
+};
+
+
 function buildCallback() {
   const url = new URL(window.location.href);
   url.searchParams.delete('code');
   return url.toString();
 }
 function openScanner() {
+  // If running inside DRIP Android WebView, call native scanner
+  if (isInDripApp()) {
+    try {
+      window.DRIP.scanBarcode();
+      return;
+    } catch (e) {
+      console.warn('DRIP.scanBarcode failed', e);
+      // fallthrough to deep-link fallback
+    }
+  }
+
+  // fallback: old deep-link approach for browsers
   const cb = encodeURIComponent(buildCallback());
   const deeplink = `dripscan://scan?callback=${cb}`;
   window.location.href = deeplink;
   setTimeout(() => { /* optional fallback */ }, 1500);
 }
+
 document.getElementById('btnScan').addEventListener('click', (e) => {
   e.preventDefault();
   openScanner();
@@ -948,11 +990,26 @@ async function doAndroidPrintWithOverride(useTotal){
     // Update UI amount immediately
     document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(useTotal).toFixed(2);
 
-    // Build & launch Android deeplink AFTER invoice is cached by the server
+    // Build printing params
     const base    = window.location.origin;
     const estEarn = lpEstimatedEarn(useTotal);
     const smsText = buildSmsText(name, useTotal, estEarn);
 
+    // If running inside the DRIP Android WebView, use the bridge
+    if (typeof window.DRIP === 'object' && typeof window.DRIP.printReceiptUrl !== 'undefined') {
+      try {
+        // Ask native to fetch /receipt/lines/<invoiceId>.txt and print
+        window.DRIP.printReceiptUrl(base, invoiceId);
+        btn.textContent = 'Sent to printer';
+        // native will call window.onPrintResult(success, errMessage) when done
+        return;
+      } catch (e) {
+        console.warn('DRIP.printReceiptUrl failed', e);
+        // fallthrough to the old deeplink fallback
+      }
+    }
+
+    // Browser fallback: keep existing deep-link + intent approach
     const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
     try { window.location.href = deeplink; } catch {}
@@ -969,6 +1026,7 @@ async function doAndroidPrintWithOverride(useTotal){
     alert('Network error while saving.');
   }
 }
+
 
 
 
@@ -1022,23 +1080,5 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
     window.history.replaceState({}, '', clean);
   }
 })();
-    function nativePrintInvoice(invoiceId) {
-  if (window.DripBridge && window.DripBridge.printReceipt) {
-    const cbName = "onNativePrintResult_" + Date.now().toString(36);
-    window[cbName] = function(success, msg) {
-      console.log("nativePrintResult", success, msg);
-      try { delete window[cbName]; } catch(_) {}
-    };
-    window.DripBridge.printReceipt(invoiceId, "", cbName);
-    return true;
-  }
-  return false;
-}
-
-// Example usage: after your server returns invoice_id, call:
-if (!nativePrintInvoice("INV1234")) {
-  // fallback for normal browser users
-  window.location.href = `drip://receipt?code=${encodeURIComponent("INV1234")}&base=${encodeURIComponent(location.origin)}`;
-}
 </script>
 {% endblock %}
