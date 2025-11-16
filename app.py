@@ -119,8 +119,25 @@ def create_app() -> Flask:
     _ALLOWED_AFTER_LOGIN_PREFIXES = ("/", "/billing", "/history", "/print", "/reprint")
 
     # --- Admin helpers ---
+    # --- Admin helpers ---
     def is_admin() -> bool:
-        return session.get("is_admin") is True
+        """Return True if the session is admin and the admin timestamp is within 5 minutes.
+        If expired, clear the admin flags from session and return False.
+        """
+        if session.get("is_admin") is not True:
+            return False
+        ts = session.get("is_admin_at")
+        if not ts:
+            # no timestamp -> be defensive and revoke admin
+            session.pop("is_admin", None)
+            session.pop("is_admin_at", None)
+            return False
+        # expire after 5 minutes (300 seconds)
+        if (time.time() - float(ts)) > 300:
+            session.pop("is_admin", None)
+            session.pop("is_admin_at", None)
+            return False
+        return True
 
     def require_admin():
         if not is_admin():
@@ -137,6 +154,8 @@ def create_app() -> Flask:
         nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
         if pin == expected:
             session["is_admin"] = True
+            # record when admin privilege was granted
+            session["is_admin_at"] = time.time()
             return redirect(nxt)
         u = urlparse(nxt)
         q = dict(parse_qsl(u.query, keep_blank_values=True))
@@ -146,9 +165,12 @@ def create_app() -> Flask:
 
     @app.post("/admin/logout")
     def admin_logout():
-        session["is_admin"] = False
+        # clear admin flag and timestamp
+        session.pop("is_admin", None)
+        session.pop("is_admin_at", None)
         nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
         return redirect(nxt)
+
 
     # -----------------------------
     # Routes
