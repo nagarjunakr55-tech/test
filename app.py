@@ -255,7 +255,7 @@ def create_app() -> Flask:
                         FROM public.sales_history
                         WHERE points_synced_at IS NULL
                         ORDER BY id DESC
-                        LIMIT 100
+                        LIMIT 20
                     """)
                     rows = cur.fetchall()
                 for inv, phone, total, earned_old, redeemed in rows:
