@@ -196,7 +196,7 @@
 <div id="loyaltyPanel" class="row" style="margin-top:10px; align-items:center; gap:10px; display:flex;">
   <span id="lpAvail" title="Available points">Available: 0</span>
   <span id="lpEarnPreview" title="Estimated points you’ll earn on this bill">(Earn: 0)</span>
-  <input id="lpRedeem" type="text" inputmode="numeric" pattern="\d*" maxlength="3" style="width:3.5ch; text-align:right; padding:4px;">
+  <input id="lpRedeem" type="text" inputmode="numeric" pattern="\d*" maxlength="6" style="width:3.5ch; text-align:right; padding:4px;">
   <button id="lpApply" type="button" style="background:#00695c;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">Apply</button>
 </div>
 
@@ -285,9 +285,17 @@ let lpCap       = 100; // fetched from backend; default 100
 let lpRate      = 2;   // points per ₹100; backend can override
 let lpRedeem    = 0;   // user-applied this bill
 
+/* ===== Minimal loyalty behaviour (drop-in; preserves existing names/calls) ===== */
+
+/* clamp redeem: only allow multiples of 50, >=50, and <= min(lpAvailable, lpCap) */
 function lpClampRedeem(raw) {
   const n = Math.max(0, Math.floor(Number(raw || 0)));
-  return Math.min(n, lpAvailable, lpCap);
+  const cap = Math.min(lpAvailable, lpCap);
+  if (cap < 50) return 0;                // can't redeem at all if available less than 50
+  const desired = Math.min(n, cap);
+  // nearest lower multiple of 50
+  const floored50 = Math.floor(desired / 50) * 50;
+  return Math.max(0, floored50);
 }
 
 function lpEstimatedEarn(finalAmt) {
@@ -298,9 +306,19 @@ function lpEstimatedEarn(finalAmt) {
 function lpRefreshUI() {
   document.getElementById('lpAvail').textContent = `Available: ${lpAvailable}`;
   const earn = lpEstimatedEarn(finalTotal);
+  // keep the original look but updated earn formatting
   document.getElementById('lpEarnPreview').textContent = `(Earn ₹${earn})`;
+  // keep showing current redeem value or blank
   document.getElementById('lpRedeem').value = lpRedeem ? String(lpRedeem) : '';
+  // disable Apply if not enough available
+  const applyBtn = document.getElementById('lpApply');
+  if (!applyBtn) return;
+  const canRedeem = lpAvailable >= 50;
+  applyBtn.disabled = !canRedeem;
+  applyBtn.style.opacity = canRedeem ? '1' : '.55';
+  applyBtn.title = canRedeem ? 'Apply' : 'Requires at least 50 points to redeem';
 }
+
 async function fetchAndSetLoyalty(phone){
   try {
     const r = await fetch(`/api/loyalty_points?phone=${encodeURIComponent(phone)}`);
@@ -318,6 +336,8 @@ async function fetchAndSetLoyalty(phone){
   recalc();
   lpRefreshUI();
 }
+
+/* ===== end loyalty block ===== */
 
 function persistState() {
   try {
@@ -783,16 +803,57 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
 });
 document.getElementById('custName').addEventListener('input', ()=>{ invalidateCheckout(); persistState(); });
 
-/* Loyalty: Apply/Remove */
+/* Loyalty: Apply/Remove (minimal safe behaviour)
+   - can only redeem when lpAvailable >= 50
+   - amounts are clamped to 50-step multiples (50,100,150...) */
 document.getElementById('lpApply').addEventListener('click', () => {
-  const raw = document.getElementById('lpRedeem').value;
-  lpRedeem = lpClampRedeem(raw);
+  // toggle behaviour: clicking Apply when already applied removes redeem
+  if (lpRedeem && lpRedeem > 0) {
+    lpRedeem = 0;
+    recalc();
+    lpRefreshUI();
+    invalidateCheckout();
+    return;
+  }
+
+  const raw = (document.getElementById('lpRedeem')?.value || '').trim();
+  const clamped = lpClampRedeem(raw);
+
+  if (clamped === 0) {
+    alert('Enter a redeem amount in steps of 50 (50,100,150...) and ensure you have at least 50 points available.');
+    document.getElementById('lpRedeem')?.focus();
+    return;
+  }
+
+  if (clamped % 50 !== 0) {
+    alert('Redeem must be in increments of 50.');
+    document.getElementById('lpRedeem')?.focus();
+    return;
+  }
+
+  lpRedeem = clamped;
   recalc();
   lpRefreshUI();
   invalidateCheckout();
 });
+
+/* Keep typing restriction small and non-intrusive (digits only) */
 document.getElementById('lpRedeem').addEventListener('input', (e) => {
-  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+});
+
+/* On blur, auto-clamp to nearest lower multiple of 50 (or clear if none allowed) */
+document.getElementById('lpRedeem').addEventListener('blur', (e) => {
+  const clamped = lpClampRedeem(e.target.value);
+  e.target.value = clamped ? String(clamped) : '';
+});
+
+/* Optional: Enter to apply (preserves UX if user presses Enter) */
+document.getElementById('lpRedeem').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('lpApply').click();
+  }
 });
 
 /* ==========================
