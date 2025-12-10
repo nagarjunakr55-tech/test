@@ -347,16 +347,24 @@ def generate_invoice_text(
         points_used: int = 0,
         points_earned: int = 0,
         points_balance: int = None,
+        saved_amount: float | int | None = None,
     ):
+    """
+    Produce a fixed-width invoice text. Backwards compatible: saved_amount is optional.
+    saved_amount, if not provided, is computed as subtotal - grand_total (total discount).
+    """
     COLS = 38
     W_NO, W_BR, W_SZ, W_Q, W_MRP, W_PRC = 2, 8, 4, 3, 6, 10
 
-    def clamp(s, n): 
+    def clamp(s, n):
         return (str(s)[:n]).ljust(n)
 
     def fmt_signed(n: float, force_plus=False) -> str:
         """Format integers with + / -; zero returns '0' (no sign)."""
-        n = int(round(float(n or 0)))
+        try:
+            n = int(round(float(n or 0)))
+        except Exception:
+            n = 0
         if n == 0:
             return "0"
         if n > 0:
@@ -370,7 +378,7 @@ def generate_invoice_text(
         "#6-2-52,",
         "DL Road, Hindupur,",
         "Satya Sai (D), AP-515201",
-        "Phone: 8106204688",
+        "Phone: [REDACTED_PHONE_NUMBER_1]",
     ]
     for s in header:
         lines.append(s.center(COLS))
@@ -378,7 +386,7 @@ def generate_invoice_text(
 
     # Invoice/date line
     today_str = india_date_str(include_time=show_time)
-    left  = f"Invoice: {invoice_id or '-'}"
+    left = f"Invoice: {invoice_id or '-'}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
 
@@ -401,16 +409,34 @@ def generate_invoice_text(
     # Items
     for idx, item in enumerate(items, start=1):
         brand = clamp(item.get("brand", ""), W_BR)
-        size  = clamp(item.get("size", ""), W_SZ)
-        qty   = int(item.get("qty", 1))
-        mrp   = int(float(item.get("mrp_price", 0)))
-        price_orig = int(float(item.get("price", 0)))
+        size = clamp(item.get("size", ""), W_SZ)
+        try:
+            qty = int(item.get("qty", 1))
+        except Exception:
+            qty = 1
+        try:
+            mrp = int(round(float(item.get("mrp_price", 0) or 0)))
+        except Exception:
+            mrp = 0
+        try:
+            price_orig = int(round(float(item.get("price", 0) or 0)))
+        except Exception:
+            price_orig = 0
 
         eff_unit = item.get("effective_unit_price")
         if eff_unit is None:
-            eff_pct = float(item.get("effective_pct") or 0.0)
-            eff_unit = int(round(price_orig * (1 - eff_pct/100.0))) if eff_pct > 0 else price_orig
-        eff_unit = int(eff_unit)
+            try:
+                eff_pct = float(item.get("effective_pct") or 0.0)
+            except Exception:
+                eff_pct = 0.0
+            if eff_pct > 0:
+                eff_unit = int(round(price_orig * (1 - eff_pct / 100.0)))
+            else:
+                eff_unit = price_orig
+        try:
+            eff_unit = int(round(float(eff_unit or 0)))
+        except Exception:
+            eff_unit = price_orig
 
         price_str = f"({price_orig}){eff_unit}" if eff_unit != price_orig else f"{price_orig}"
 
@@ -426,53 +452,72 @@ def generate_invoice_text(
 
     lines.append("-" * COLS)
 
-    # ==== Loyalty block (ABOVE totals), like your sample ====
+    # ==== Loyalty & totals block ====
     LBL_W = 18
+
+    # Normalize numeric inputs defensively
+    def _f(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    subtotal_val = _f(subtotal)
+    gst_val = _f(gst_amount)
+    grand_val = _f(grand_total)
+    discount_val = _f(discount_amt)
+
+    # Compute saved_total: canonical definition is subtotal - grand_total
+    computed_saved_total = max(0.0, subtotal_val - grand_val)
+
+    # If caller provided saved_amount, prefer it; else use computed value
+    if saved_amount is not None:
+        try:
+            saved_total = float(saved_amount or 0)
+        except Exception:
+            saved_total = computed_saved_total
+    else:
+        saved_total = computed_saved_total
+
+    # Loyalty block: show Redeemed, Earned, Balance (if applicable)
     if (points_used or points_earned or points_balance is not None):
-        # Only show Redeemed if > 0; always sign it negative
-        if points_used:
-            lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{fmt_signed(-abs(points_used)).rjust(COLS - LBL_W)}")
-        # Earned as +N (force plus)
-        if points_earned:
-            lines.append(f"{clamp('Earned (₹)', LBL_W)}{fmt_signed(points_earned, force_plus=True).rjust(COLS - LBL_W)}")
-        # Balance without sign
+        if points_used and int(points_used) > 0:
+            # show redeemed in rupees (positive number), left label indicates it's redeem
+            lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{str(int(points_used)).rjust(COLS - LBL_W)}")
+        if points_earned and int(points_earned) != 0:
+            lines.append(f"{clamp('Earned (₹)', LBL_W)}{fmt_signed(int(points_earned), force_plus=True).rjust(COLS - LBL_W)}")
         if points_balance is not None:
-            bal = int(round(points_balance or 0))
+            try:
+                bal = int(round(points_balance or 0))
+            except Exception:
+                bal = 0
             lines.append(f"{clamp('Balance (₹)', LBL_W)}{str(bal).rjust(COLS - LBL_W)}")
         lines.append("-" * COLS)
 
-    # ==== Totals block ====    
+    # Totals lines (Discount, GST, Saved, Total)
+    if discount_val and discount_val > 0:
+        lines.append(f"{clamp('Discount', LBL_W)}{format(discount_val, '.2f').rjust(COLS - LBL_W)}")
 
-    saved_amt = float(discount_amt or 0)
-
-    # --- NEW: compute extra savings if operator manually overrode total ---
-    try:
-        calc_total = float(subtotal or 0) - float(saved_amt or 0)
-        override_diff = calc_total - float(grand_total or 0)
-        if override_diff > 0.009:  # treat as additional savings
-            saved_amt += override_diff
-    except Exception:
-        pass
-
-    gst_val = float(gst_amount or 0)
-    if gst_val > 0:
+    if gst_val and gst_val > 0:
         lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
 
-    saved_amt = float(discount_amt or 0)
-    if saved_amt > 0:
-        label = "Saved"
-        lines.append(f"{clamp(label, LBL_W)}{('-' + format(saved_amt, '.2f')).rjust(COLS - LBL_W)}")
-        
-    lines.append(f"{clamp('Total', LBL_W)}{format(float(grand_total or 0), '.2f').rjust(COLS - LBL_W)}")
+    # Saved: show the total rupee savings (positive number). If saved_total computed as 0, only show if > 0.01
+    if saved_total and saved_total > 0.009:
+        lines.append(f"{clamp('Saved', LBL_W)}{format(saved_total, '.2f').rjust(COLS - LBL_W)}")
+
+    # Final total
+    lines.append(f"{clamp('Total', LBL_W)}{format(grand_val, '.2f').rjust(COLS - LBL_W)}")
 
     lines.append("-" * COLS)
 
+    # Footer
     lines.append("Thanks for shopping with DRIP Fashions!".center(COLS))
     lines.append(" " * COLS)
 
     # Left margin inset for printer
     MARGIN = 2
     return "\n".join((" " * MARGIN) + ln for ln in lines)
+
 
 
 
