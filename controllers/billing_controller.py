@@ -56,7 +56,6 @@ def inject_admin():
     return {"is_admin": is_admin()}
 
 
-# ----------------- Routes -----------------
 @billing_bp.get("/")
 def root():
     return redirect(url_for("billing.billing"))
@@ -103,7 +102,6 @@ def billing():
     return render_template("billing.html")
 
 
-# ------------ APIs the billing.html JS uses ------------
 @billing_bp.post("/api/checkout_prepare", endpoint="api_checkout_prepare")
 def api_checkout_prepare():
     invoice_id = generate_unique_invoice_id()
@@ -236,14 +234,11 @@ def api_checkout():
                 """, (earned_pts, used_pts, invoice_id))
                 conn2.commit()
 
-            # optional cleanup: remove DB cache after canonical save
+            # optional cleanup: delete DB cache after canonical save
             try:
-                conn3 = get_connection()
-                cur3 = conn3.cursor()
-                cur3.execute("DELETE FROM receipt_cache WHERE invoice_id = %s", (invoice_id,))
-                conn3.commit()
-                cur3.close()
-                conn3.close()
+                with get_connection() as conn3, conn3.cursor() as cur3:
+                    cur3.execute("DELETE FROM receipt_cache WHERE invoice_id = %s", (invoice_id,))
+                    conn3.commit()
             except Exception:
                 current_app.logger.exception("Failed to delete receipt_cache for %s", invoice_id)
 
@@ -322,7 +317,7 @@ def api_barcode_lookup():
         return jsonify({"ok": False, "error": "empty_barcode"}), 400
 
     def to_int_or_none(x):
-        if x is None: 
+        if x is None:
             return None
         try:
             return int(float(str(x).strip()))
@@ -360,11 +355,9 @@ def api_barcode_lookup():
     return jsonify({"ok": True, "item": item})
 
 
-# -----------------------------
-# TSPL / Receipt endpoints (public fetch by printer)
-# -----------------------------
 @billing_bp.get("/receipt/lines/<invoice_id>.txt")
 def receipt_lines(invoice_id):
+    # Try process-local cache -> DB cache -> canonical sales_history
     invoice = _print_cache_get(invoice_id)
     if not invoice:
         invoice = db_receipt_cache_get(invoice_id)

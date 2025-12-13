@@ -31,11 +31,6 @@ def ist_now():
 
 
 def india_date_str(dt: Optional[datetime] = None, include_time: bool = True) -> str:
-    """
-    Format as:
-      - DD-MM-YYYY hh:mm AM/PM when include_time=True
-      - DD-MM-YYYY                when include_time=False
-    """
     if dt is None:
         dt = ist_now()
     return dt.strftime("%d-%m-%Y %I:%M %p") if include_time else dt.strftime("%d-%m-%Y")
@@ -63,7 +58,6 @@ def find_product_by_barcode(code: str) -> Optional[Dict[str, Any]]:
 
     if not row:
         return None
-    # Keys aligned to your frontend cart usage
     return {
         "code": code,
         "brand": row[0],
@@ -72,7 +66,7 @@ def find_product_by_barcode(code: str) -> Optional[Dict[str, Any]]:
         "selling_price": row[3],
         "size": row[4],
         "category": row[5],
-        "price": row[3],   # default selling price
+        "price": row[3],
         "qty": 1
     }
 
@@ -135,7 +129,6 @@ def get_last_customer_name(phone: str) -> Optional[str]:
 # Invoice ID
 # ---------------------------------
 def generate_unique_invoice_id() -> str:
-    """Generate a 6-char unique invoice id and verify against DB."""
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -152,7 +145,7 @@ def generate_unique_invoice_id() -> str:
 # Totals & discount rules
 # ---------------------------------
 _ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
-_GUARD_PAD = 100  # backend safety: unit_after must be >= bought + 100
+_GUARD_PAD = 100
 
 
 def calculate_totals(items, discount_input: str):
@@ -207,7 +200,6 @@ def calculate_totals(items, discount_input: str):
         out_it["effective_pct"] = eff_pct
         items_effective.append(out_it)
 
-    # Optional cart-wide guard
     if grand_total < (bought_total + _GUARD_PAD):
         subtotal = 0.0
         grand_total = 0.0
@@ -282,7 +274,6 @@ def lp_ensure_table() -> None:
             """)
             conn.commit()
     except Exception:
-        # non-fatal
         pass
 
 
@@ -349,12 +340,13 @@ def generate_invoice_text(
         points_balance: int = None,
         saved_amount: Optional[float] = None,
     ) -> str:
+    # (function body identical to earlier — generate fixed-width invoice)
+    # For brevity in this snippet assume the same code you provided earlier is used here.
+    # Copy your existing generate_invoice_text implementation unchanged.
     COLS = 38
     W_NO, W_BR, W_SZ, W_Q, W_MRP, W_PRC = 2, 8, 4, 3, 6, 10
-
     def clamp(s, n):
         return (str(s)[:n]).ljust(n)
-
     def fmt_signed(n: float, force_plus=False) -> str:
         try:
             n = int(round(float(n or 0)))
@@ -365,7 +357,6 @@ def generate_invoice_text(
         if n > 0:
             return f"+{n}" if force_plus else str(n)
         return f"-{abs(n)}"
-
     lines: List[str] = []
     header = [
         "DRIP",
@@ -377,15 +368,12 @@ def generate_invoice_text(
     for s in header:
         lines.append(s.center(COLS))
     lines.append("-" * COLS)
-
     today_str = india_date_str(include_time=show_time)
     left = f"Invoice: {invoice_id or '-'}"
     right = f"Date: {today_str}"
     lines.append(f"{left:<{COLS - len(right)}}{right}")
-
     lines.append(clamp(f"Customer: {customer_name} / {customer_phone}", COLS))
     lines.append("-" * COLS)
-
     hdr = (
         f"{'No':<{W_NO}} "
         f"{'Brand':<{W_BR}} "
@@ -396,7 +384,6 @@ def generate_invoice_text(
     )
     lines.append(hdr)
     lines.append("-" * COLS)
-
     for idx, item in enumerate(items, start=1):
         brand = clamp(item.get("brand", ""), W_BR)
         size = clamp(item.get("size", ""), W_SZ)
@@ -412,7 +399,6 @@ def generate_invoice_text(
             price_orig = int(round(float(item.get("price", 0) or 0)))
         except Exception:
             price_orig = 0
-
         eff_unit = item.get("effective_unit_price")
         if eff_unit is None:
             try:
@@ -427,9 +413,7 @@ def generate_invoice_text(
             eff_unit = int(round(float(eff_unit or 0)))
         except Exception:
             eff_unit = price_orig
-
         price_str = f"({price_orig}){eff_unit}" if eff_unit != price_orig else f"{price_orig}"
-
         row = (
             f"{idx:<{W_NO}} "
             f"{brand:<{W_BR}} "
@@ -439,24 +423,18 @@ def generate_invoice_text(
             f"{price_str:>{W_PRC}}"
         )
         lines.append(row)
-
     lines.append("-" * COLS)
-
     LBL_W = 18
-
     def _f(x):
         try:
             return float(x or 0)
         except Exception:
             return 0.0
-
     subtotal_val = _f(subtotal)
     gst_val = _f(gst_amount)
     grand_val = _f(grand_total)
     discount_val = _f(discount_amt)
-
     computed_saved_total = max(0.0, subtotal_val - grand_val)
-
     if saved_amount is not None:
         try:
             saved_total = float(saved_amount or 0)
@@ -464,7 +442,6 @@ def generate_invoice_text(
             saved_total = computed_saved_total
     else:
         saved_total = computed_saved_total
-
     if (points_used or points_earned or points_balance is not None):
         if points_used and int(points_used) > 0:
             lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{str(int(points_used)).rjust(COLS - LBL_W)}")
@@ -477,22 +454,16 @@ def generate_invoice_text(
                 bal = 0
             lines.append(f"{clamp('Balance (₹)', LBL_W)}{str(bal).rjust(COLS - LBL_W)}")
         lines.append("-" * COLS)
-
     if discount_val and discount_val > 0:
         lines.append(f"{clamp('Discount', LBL_W)}{format(discount_val, '.2f').rjust(COLS - LBL_W)}")
-
     if gst_val and gst_val > 0:
         lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
-
     if saved_total and saved_total > 0.009:
         lines.append(f"{clamp('Saved', LBL_W)}{format(saved_total, '.2f').rjust(COLS - LBL_W)}")
-
     lines.append(f"{clamp('Total', LBL_W)}{format(grand_val, '.2f').rjust(COLS - LBL_W)}")
-
     lines.append("-" * COLS)
     lines.append("Thanks for shopping with DRIP Fashions!".center(COLS))
     lines.append(" " * COLS)
-
     MARGIN = 2
     return "\n".join((" " * MARGIN) + ln for ln in lines)
 
@@ -608,7 +579,9 @@ def get_invoice_text(invoice_id: str) -> Optional[str]:
     return row[0] if row else None
 
 
-# DB-backed small cache helpers (controller will call these)
+# -------------------------
+# DB-backed small cache
+# -------------------------
 def upsert_receipt_cache(invoice_id: str, invoice_text: str) -> None:
     try:
         with get_connection() as conn:
@@ -622,7 +595,7 @@ def upsert_receipt_cache(invoice_id: str, invoice_text: str) -> None:
                 """, (invoice_id, invoice_text))
             conn.commit()
     except Exception:
-        # intentionally log from controller context (current_app may be unavailable here)
+        # intentionally keep logging to controller where current_app is available
         try:
             from flask import current_app
             current_app.logger.exception("receipt_cache upsert failed for %s", invoice_id)
@@ -646,7 +619,9 @@ def db_receipt_cache_get(invoice_id: str) -> Optional[str]:
         return None
 
 
-# Lightweight helpers for programmatic preview/finalize (kept compatible with earlier API)
+# ---------------------------------
+# Programmatic helpers (preview/finalize)
+# ---------------------------------
 def _coerce_rupees(x):
     try:
         return max(0, int(round(float(str(x).strip()))))
