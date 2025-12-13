@@ -1,14 +1,13 @@
-from db import get_connection
-from datetime import datetime
+# billing_logic.py
+import time
+import re
 import json
 import random
 import string
-from typing import Tuple, List, Any
+from datetime import datetime
+from typing import Tuple, List, Any, Optional
+
 from db import get_connection
-from threading import Thread
-from typing import Optional, List, Dict, Any, Tuple
-
-
 
 GSTIN = "123123"
 BRAND_NAME = "DRIP"
@@ -16,12 +15,11 @@ BRAND_NAME = "DRIP"
 # Per-item guard padding: unit_after must be >= bought_price + PAD
 GUARD_PAD = 100
 
-# --- IST helpers --------------------------------------------------------------
+# Try zoneinfo, fallback to pytz if necessary
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     from pytz import timezone as ZoneInfo  # fallback
-
 
 def ist_now():
     """Return current time in Asia/Kolkata."""
@@ -31,7 +29,6 @@ def ist_now():
         from pytz import timezone
         tz = timezone("Asia/Kolkata")
     return datetime.now(tz)
-
 
 def india_date_str(dt=None, include_time: bool = True):
     """
@@ -43,13 +40,13 @@ def india_date_str(dt=None, include_time: bool = True):
         dt = ist_now()
     return dt.strftime("%d-%m-%Y %I:%M %p") if include_time else dt.strftime("%d-%m-%Y")
 
-
 # ---------------------------------
 # Product lookups
 # ---------------------------------
 def find_product_by_barcode(code: str):
     conn = get_connection()
     cur = conn.cursor()
+    ccur = cur  # keep variable name consistent with earlier snippet
     ccur.execute("""
     SELECT brand, mrp, bought_price, selling_price, size, category
     FROM barcode_catalog
@@ -57,7 +54,7 @@ def find_product_by_barcode(code: str):
     LIMIT 1
 """, (code.strip().upper(),))
 
-    row = cur.fetchone()
+    row = ccur.fetchone()
     conn.close()
 
     if not row:
@@ -74,7 +71,6 @@ def find_product_by_barcode(code: str):
         "price": row[3],   # default selling price
         "qty": 1
     }
-
 
 def search_products(brand: str = "", category: str = "", size: str = "", limit: int = 20):
     sql = """
@@ -115,7 +111,6 @@ def search_products(brand: str = "", category: str = "", size: str = "", limit: 
         })
     return out
 
-
 def get_last_customer_name(phone: str):
     conn = get_connection()
     cur = conn.cursor()
@@ -129,7 +124,6 @@ def get_last_customer_name(phone: str):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
-
 
 # ---------------------------------
 # Invoice ID
@@ -145,13 +139,11 @@ def generate_unique_invoice_id() -> str:
             conn.close()
             return candidate
 
-
 # ---------------------------------
 # Totals & discount rules
 # ---------------------------------
 _ALLOWED_PCTS = {5, 10, 15, 20, 25, 30, 35}
 _GUARD_PAD = 100  # backend safety: unit_after must be >= bought + 100
-
 
 def calculate_totals(items, discount_input: str):
     """
@@ -254,7 +246,6 @@ def calculate_totals(items, discount_input: str):
         "gst": round(gst, 2),
         "items_effective": items_effective,
     }
-
 
 # ---------------------------------
 # Loyalty (minimal, single-table)
@@ -518,9 +509,6 @@ def generate_invoice_text(
     MARGIN = 2
     return "\n".join((" " * MARGIN) + ln for ln in lines)
 
-
-
-
 # ---------------------------------
 # Persistence
 # ---------------------------------
@@ -554,7 +542,6 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
     conn.commit()
     cur.close()
     conn.close()
-
 
 # ---------------------------------
 # Queries for history & reprint
@@ -639,9 +626,6 @@ def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tu
         rows = rows[:limit]
     return rows, has_next
 
-
-
-
 def get_invoice_text(invoice_id):
     conn = get_connection()
     cur = conn.cursor()
@@ -650,12 +634,7 @@ def get_invoice_text(invoice_id):
     conn.close()
     return row[0] if row else None
 
-
 # New code here
-
-# services/billing_logic.py  (additions)
-
-
 
 def _coerce_rupees(x):
     try:

@@ -1,6 +1,12 @@
+# billing.py
 import time
 import re
+import os
+import json
+from pathlib import Path
+from threading import Thread
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, abort, Response
+
 from db import get_connection
 
 from billing_logic import (
@@ -18,28 +24,88 @@ from billing_logic import (
     loyalty_finalize,
     REDEEM_CAP,
     EARN_PER_100,
+    checkout_preview_logic,
+    checkout_finalize_logic,
 )
-from threading import Thread
-
 
 billing_bp = Blueprint("billing", __name__)
 
-# ---- tiny transport-only cache for printer race ----
+# ---- tiny transport-only cache for printer race (in-memory + file-backed) ----
 _PRINT_CACHE = {}
 _PRINT_CACHE_TTL = 300
 
+# directory for file-backed receipt cache. override with env var if needed.
+RECEIPT_CACHE_DIR = Path(os.getenv("RECEIPT_CACHE_DIR", "./receipt_cache"))
+try:
+    RECEIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    # best-effort: if this fails, file-backed cache will be no-op
+    pass
+
+def _cache_file_path(code: str) -> Path:
+    safe = "".join(c for c in code if (c.isalnum() or c in ("-", "_"))).strip() or code
+    return RECEIPT_CACHE_DIR / f"{safe}.txt"
+
 def _cache_put(code: str, text: str, ttl: int = _PRINT_CACHE_TTL):
-    _PRINT_CACHE[code] = (text, time.time() + ttl)
+    """
+    Put invoice_text into in-memory cache and write to file cache (atomic).
+    Envelope stored in file: {"expiry": <epoch>, "invoice_text": "<...>"}
+    """
+    try:
+        expiry = time.time() + int(ttl)
+        _PRINT_CACHE[code] = (text, expiry)
+    except Exception:
+        pass
+
+    try:
+        fp = _cache_file_path(code)
+        tmp = fp.with_suffix(".tmp")
+        envelope = {"expiry": expiry, "invoice_text": text}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(envelope, f, ensure_ascii=False)
+        os.replace(tmp, fp)
+    except Exception:
+        # swallow filesystem errors; cache is best-effort
+        pass
 
 def _cache_get(code: str):
-    v = _PRINT_CACHE.get(code)
-    if not v:
+    """
+    Check memory cache first; if missing, check file-backed cache. Return invoice_text or None.
+    """
+    try:
+        v = _PRINT_CACHE.get(code)
+        if v:
+            text, exp = v
+            if time.time() <= exp:
+                return text
+            else:
+                _PRINT_CACHE.pop(code, None)
+    except Exception:
+        pass
+
+    try:
+        fp = _cache_file_path(code)
+        if not fp.exists():
+            return None
+        with open(fp, "r", encoding="utf-8") as f:
+            envelope = json.load(f)
+        expiry = float(envelope.get("expiry", 0))
+        invoice_text = envelope.get("invoice_text", "")
+        if time.time() <= expiry and invoice_text:
+            try:
+                _PRINT_CACHE[code] = (invoice_text, expiry)
+            except Exception:
+                pass
+            return invoice_text
+        else:
+            # expired -> try remove
+            try:
+                fp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+    except Exception:
         return None
-    text, exp = v
-    if time.time() > exp:
-        _PRINT_CACHE.pop(code, None)
-        return None
-    return text
 
 # ---- auth helpers used by templates ----
 def is_admin() -> bool:
@@ -86,6 +152,13 @@ def billing():
             grand_total=totals["grand_total"],
             discount_amt=totals["discount_amt"]
         )
+
+        # Cache immediately (so printers / Android can fetch before DB write completes)
+        try:
+            _cache_put(invoice_id, invoice_text)
+        except Exception:
+            pass
+
         save_to_db(
             invoice_id=invoice_id, name=name, phone=phone,
             items=items_for_receipt, subtotal=totals["subtotal"],
@@ -279,9 +352,6 @@ def api_checkout():
         "override_used": bool(override_total is not None)
     })
 
-
-
-
 @billing_bp.get("/api/loyalty_points", endpoint="api_loyalty_points")
 def api_loyalty_points():
     phone = (request.args.get("phone") or "").strip()
@@ -371,6 +441,13 @@ def api_barcode_lookup():
 # -----------------------------
 @billing_bp.get("/receipt/lines/<invoice_id>.txt")
 def receipt_lines(invoice_id):
+    """
+    Android / printer clients hit this endpoint to fetch the plain-text receipt.
+    Behavior:
+      - Try in-memory cache
+      - If missing, try file-backed cache (survives restarts until TTL)
+      - If still missing, fall back to DB (sales_history.invoice_text)
+    """
     invoice = _cache_get(invoice_id) or get_invoice_text(invoice_id)
     if not invoice:
         abort(404, f"Invoice {invoice_id} not found")
