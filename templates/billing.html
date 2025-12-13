@@ -1008,13 +1008,13 @@ async function doAndroidPrintWithOverride(useTotal){
     if (!j || !j.ok) {
       btn.disabled = false;
       btn.textContent = oldTxt;
+      // try to surface server message if available
       const errMsg = (j && j.error) ? j.error : 'Save failed';
       alert(errMsg);
       return;
     }
 
     // Server returned success and an invoice
-    console.debug('checkout response', j);
     const invoiceId = j.invoice_id || null;
     lastInvoiceId   = invoiceId;
     lastInvoiceText = j.invoice_text || lastInvoiceText || '';
@@ -1023,15 +1023,13 @@ async function doAndroidPrintWithOverride(useTotal){
     document.getElementById('invoicePreview').textContent = lastInvoiceText;
     document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
 
-    // Update loyalty state from server if provided (support both new and older keys)
-    if (typeof j.points_balance !== 'undefined') {
-      lpAvailable = Number(j.points_balance || 0);
-      lpRedeem = 0;
-    } else if (typeof j.remaining_points !== 'undefined') {
-      // backward compatibility
+    // The server should have deducted the points already (atomic). But update local state:
+    // if server communicated remaining points, update lpAvailable (graceful)
+    if (typeof j.remaining_points !== 'undefined') {
       lpAvailable = Number(j.remaining_points || 0);
-      lpRedeem = 0;
+      lpRedeem = 0; // we've consumed redeem; reset local applied redeem for UI clarity
     } else {
+      // best-effort: subtract lpRedeem locally so UI matches expectation
       lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
       lpRedeem = 0;
     }
@@ -1042,47 +1040,18 @@ async function doAndroidPrintWithOverride(useTotal){
     const estEarn = lpEstimatedEarn(finalOverride);
     const smsText = buildSmsText(name, finalOverride, estEarn);
 
-    // Prefer sending the full invoice text base64 (so Android doesn't need to fetch it).
-    // Compute URL-safe base64 of invoice text
-    let invoiceB64 = "";
-    try {
-      invoiceB64 = btoa(unescape(encodeURIComponent(lastInvoiceText || "")))
-                    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    } catch (e) {
-      invoiceB64 = "";
-    }
+    // primary deeplink (app-specific)
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
+                     `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
 
-    // Conservative safe threshold for included b64 in intent URI (encoded length)
-    const SAFE_B64_LEN = 4000;
-    const useB64 = invoiceB64 && invoiceB64.length < SAFE_B64_LEN;
+    try { window.location.href = deeplink; } catch (e) { /* ignore */ }
 
-    // Construct canonical params (always include base, code + sms params)
-    const commonParams = `base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
-                         `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
-
-    // Compose the intent:// URL (preferred) — include invoice_b64 as query param if small enough
-    let intentUrl = `intent://receipt?${commonParams}` +
-                    (useB64 ? `&invoice_b64=${encodeURIComponent(invoiceB64)}` : "") +
-                    `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + (invoiceId || ''))};end`;
-
-    // Compose the custom-scheme deeplink (drip://) as a secondary fallback
-    let schemeUrl = `drip://receipt?${commonParams}` + (useB64 ? `&invoice_b64=${encodeURIComponent(invoiceB64)}` : "");
-
-    // Slight pause to help server-side cache become available on edge devices.
-    // This keeps the user gesture recent for Chrome-to-app handoff but gives the server 120ms.
-    setTimeout(() => {
-      try { window.location.href = intentUrl; } catch (e) { console.warn('intent redirect failed', e); }
-    }, 120);
-
-    // If intent doesn't immediately open the app, try scheme after a short delay
-    setTimeout(() => {
-      try { window.location.href = schemeUrl; } catch (e) { /* ignore */ }
-    }, 380);
-
-    // Final fallback — open reprint page after slightly longer delay
-    setTimeout(() => {
-      try { window.location.href = base + '/reprint/' + (invoiceId || ''); } catch (e) { /* ignore */ }
-    }, 1200);
+    // intent fallback + browser fallback to reprint page
+    const intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
+                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
+                      `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + (invoiceId || ''))};end`;
+    setTimeout(()=>{ try { window.location.replace(intentUrl); } catch {} }, 250);
+    setTimeout(()=>{ try { window.location.href = base + '/reprint/' + (invoiceId || ''); } catch {} }, 1200);
 
     btn.textContent = 'Sent to printer';
 
@@ -1097,7 +1066,6 @@ async function doAndroidPrintWithOverride(useTotal){
     alert('Network error while saving.');
   }
 }
-
 
 
 
