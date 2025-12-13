@@ -996,6 +996,15 @@ async function doAndroidPrintWithOverride(useTotal){
     toSave.invoice_id = window.__reservedInvoiceId;
   }
 
+  // helper: UTF8 -> base64 (safe for non-ASCII)
+  function utf8_to_b64(s){
+    try {
+      return btoa(unescape(encodeURIComponent(s)));
+    } catch (e) {
+      try { return btoa(s); } catch { return ""; }
+    }
+  }
+
   try {
     const res = await fetch('/api/checkout', {
       method: 'POST',
@@ -1040,16 +1049,28 @@ async function doAndroidPrintWithOverride(useTotal){
     const estEarn = lpEstimatedEarn(finalOverride);
     const smsText = buildSmsText(name, finalOverride, estEarn);
 
-    // primary deeplink (app-specific)
-    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
-                     `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
+    // Prepare base64 invoice text (prefer server-provided authoritative invoice_text)
+    const invoiceTextServer = (j && j.invoice_text) ? j.invoice_text : (lastInvoiceText || "");
+    const invoice_b64 = invoiceTextServer ? utf8_to_b64(invoiceTextServer) : "";
+
+    // primary deeplink (app-specific) — include invoice_b64 as query param (fallback)
+    let deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
+                   `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
+    if (invoice_b64) {
+      deeplink += `&invoice_b64=${encodeURIComponent(invoice_b64)}`;
+    }
 
     try { window.location.href = deeplink; } catch (e) { /* ignore */ }
 
-    // intent fallback + browser fallback to reprint page
-    const intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
-                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
-                      `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + (invoiceId || ''))};end`;
+    // intent fallback — include invoice_b64 both as query param and as Intent extra (S.invoice_b64=...)
+    const fallback = encodeURIComponent(base + '/reprint/' + (invoiceId || ''));
+    let intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
+                    `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
+                    (invoice_b64 ? `&invoice_b64=${encodeURIComponent(invoice_b64)}` : "") +
+                    `#Intent;scheme=drip;package=com.drip.tsplprint;` +
+                    (invoice_b64 ? `S.invoice_b64=${encodeURIComponent(invoice_b64)};` : "") +
+                    `S.browser_fallback_url=${fallback};end`;
+
     setTimeout(()=>{ try { window.location.replace(intentUrl); } catch {} }, 250);
     setTimeout(()=>{ try { window.location.href = base + '/reprint/' + (invoiceId || ''); } catch {} }, 1200);
 
