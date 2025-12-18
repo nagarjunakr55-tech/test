@@ -378,7 +378,7 @@ def generate_invoice_text(
         "#6-2-52,",
         "DL Road, Hindupur,",
         "Satya Sai (D), AP-515201",
-        "Phone: 8106204688",
+        "Phone: [REDACTED_PHONE_NUMBER_1]",
     ]
     for s in header:
         lines.append(s.center(COLS))
