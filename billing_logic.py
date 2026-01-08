@@ -374,7 +374,7 @@ def generate_invoice_text(
     lines = []
     # Header (centered)
     header = [
-        "DRIP",
+        "DRIP Fashions",
         "#6-2-52,",
         "DL Road, Hindupur,",
         "Satya Sai (D), AP-515201",
