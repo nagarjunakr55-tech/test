@@ -164,13 +164,8 @@
   </table>
 </div>
 
-<!-- Totals + discount -->
-<div class="row" style="margin-top:10px;">
-  <input id="discount" class="input-sm" autocomplete="off" inputmode="numeric" pattern="\d{2}" maxlength="2" title="Enter a 2-digit number (10–99)" style="width:2.5em; max-width:40px; text-align:center; padding:6px;">
-  <button id="applyDiscount"
-        style="background:#2196f3;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
-    Discount
-  </button>
+<!-- Totals -->
+
 
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
@@ -659,53 +654,6 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   e.target.value = String(v);
 });
 
-/* =================
-   Global Discount
-   ================= */
-document.getElementById('applyDiscount').addEventListener('click', ()=>{
-  let raw = (document.getElementById('discount').value || '').trim();
-
-  if (!raw){
-    appliedDiscount = "";
-    renderCart();
-    invalidateCheckout();
-    persistState();
-    return;
-  }
-
-  let pct = raw.endsWith('%') ? parseFloat(raw.slice(0,-1)) : parseFloat(raw);
-  const ALLOWED = new Set([10,15,20,25,30,35]);
-  if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
-
-  for (const it of cart) {
-    const rowPct = Number(it.disc_pct||0);
-    const usePct = rowPct > 0 ? rowPct : pct;
-    const unitSell   = Number(it.price || 0);
-    const unitBought = Number(it.bought_price || 0);
-    const unitAfter  = unitSell * (1 - usePct/100);
-    if (usePct > 0 && unitAfter < (unitBought + 100)) {
-      alert(`Maximum discount reached for ${it.brand || 'item'} (${it.category || ''} ${it.size || ''}).`);
-      return;
-    }
-  }
-
-  appliedDiscount = String(pct);
-  document.getElementById('discount').value = String(pct);
-
-  renderCart();
-  invalidateCheckout();
-  persistState();
-});
-
-document.getElementById('discount').addEventListener('input', () => {
-  const raw = (document.getElementById('discount').value || '').trim();
-  if (!raw) {
-    appliedDiscount = "";
-    renderCart();
-    invalidateCheckout();
-    persistState();
-  }
-});
 
 /* =================
    Barcode handlers
