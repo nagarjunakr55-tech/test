@@ -469,6 +469,28 @@ function renderCart() {
   invalidateCheckout();
   persistState();
 }
+document.querySelector('#cartTable').addEventListener('change', (e) => {
+  if (!e.target.classList.contains('sp-input')) return;
+
+  const i = Number(e.target.dataset.i);
+  if (Number.isNaN(i) || !cart[i]) return;
+
+  const newPrice = round0(e.target.value);
+  const bought   = Number(cart[i].bought_price || 0);
+
+  // profit protection
+  if (newPrice < bought + MIN_PROFIT) {
+    alert(`Minimum profit must be ₹${MIN_PROFIT}`);
+    e.target.value = round0(cart[i].price);
+    return;
+  }
+
+  // ✅ THIS IS THE CRITICAL LINE
+  cart[i].price = newPrice;
+
+  renderCart();
+});
+
 
 /* =================
    Global Discount
