@@ -378,7 +378,7 @@ def generate_invoice_text(
         "#6-2-52,",
         "DL Road, Hindupur,",
         "Satya Sai (D), AP-515201",
-        "Phone: 8106204688",
+        "Phone: [REDACTED_PHONE_NUMBER_1]",
     ]
     for s in header:
         lines.append(s.center(COLS))
@@ -493,10 +493,6 @@ def generate_invoice_text(
                 bal = 0
             lines.append(f"{clamp('Balance (₹)', LBL_W)}{str(bal).rjust(COLS - LBL_W)}")
         lines.append("-" * COLS)
-
-    # Totals lines (Discount, GST, Saved, Total)
-    if discount_val and discount_val > 0:
-        lines.append(f"{clamp('Discount', LBL_W)}{format(discount_val, '.2f').rjust(COLS - LBL_W)}")
 
     if gst_val and gst_val > 0:
         lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
