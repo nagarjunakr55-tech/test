@@ -76,43 +76,6 @@
     padding: 2px 4px;
   }
 
-  /* Apply is invisible but clickable */
-  .disc-apply {
-    background: transparent;
-    border: none;
-    color: transparent;
-    opacity: 0;
-    cursor: pointer;
-    width: 40px;
-    height: 24px;
-  }
-  .floor-btn {
-    background: transparent;
-    border: none;
-    color: transparent;
-    opacity: 0;
-    cursor: pointer;
-    width: 40px;
-    height: 24px;
-  }
-
-  .sp-input::-webkit-outer-spin-button,
-  .sp-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .sp-input[type=number] { -moz-appearance: textfield; }
-
-  .disc-input{
-    width: 4.5ch;
-    max-width: 4.5ch;
-    min-width: 4.5ch;
-    text-align: right;
-    padding: 2px 4px;
-  }
-
-  .orig-muted { opacity: .65; white-space: nowrap; }
-  .disc-input::-webkit-outer-spin-button,
-  .disc-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .disc-input[type=number] { -moz-appearance: textfield; }
-
   /* Modal input – tidy on mobile */
   #manualTotalInput::-webkit-outer-spin-button,
   #manualTotalInput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -145,7 +108,6 @@
       <col style="width:10%;">
       <col style="width:12%;">
       <col style="width:18%;">  <!-- Price -->
-      <col style="width:14%;">  <!-- Disc -->
       <col style="width:4%;">   <!-- (kept for layout balance) -->
     </colgroup>
     <thead>
@@ -156,7 +118,6 @@
         <th style="text-align:left;">Qty</th>
         <th style="text-align:right;">MRP</th>
         <th style="text-align:right;">Price</th>
-        <th style="text-align:center;">Disc</th>
         <th style="text-align:right;"></th>
       </tr>
     </thead>
@@ -414,50 +375,35 @@ function globalPct(){
    Totals
    ========= */
 function recalc() {
-  let gPct = globalPct();
+  const gPct = globalPct();
 
   let subtotalBase = 0;
-  let subtotalAfterRows = 0;
-  let eligibleForGlobal = 0;
-  let boughtTotal = 0;
+  let boughtTotal  = 0;
 
   for (const it of cart) {
-    const qty        = Number(it.qty || 0);
-    const unitSell   = Number(it.price || 0);
-    const unitBought = Number(it.bought_price || 0);
-    const rowPct     = Number(it.disc_pct || 0);
-
-    subtotalBase += unitSell * qty;
-    boughtTotal  += unitBought * qty;
-
-    let unitAfterRows = unitSell;
-    if (rowPct > 0) {
-      unitAfterRows = unitSell * (1 - rowPct/100);
-    } else {
-      eligibleForGlobal += unitSell * qty;
-    }
-
-    subtotalAfterRows += unitAfterRows * qty;
+    const qty = Number(it.qty || 0);
+    subtotalBase += it.price * qty;
+    boughtTotal  += it.bought_price * qty;
   }
 
-  let globalDiscAmt = 0;
-  if (gPct > 0) globalDiscAmt = eligibleForGlobal * (gPct/100);
+  let globalDiscAmt = gPct > 0 ? (subtotalBase * gPct / 100) : 0;
+  let finalTotalLocal = subtotalBase - globalDiscAmt;
 
-  const finalCandidate = subtotalAfterRows - globalDiscAmt;
-
-  let finalTotalLocal = finalCandidate;
-  if (finalCandidate < (boughtTotal + 100)) {
+  // profit protection
+  if (finalTotalLocal < (boughtTotal + MIN_PROFIT)) {
+    finalTotalLocal = subtotalBase;
     globalDiscAmt = 0;
-    finalTotalLocal = subtotalAfterRows;
   }
 
-  finalTotal = Math.max(0, finalTotalLocal);
-  subtotal   = subtotalBase;
   let finalBeforeRedeem = Math.max(0, finalTotalLocal);
+  const appliedRedeem = Math.min(
+    lpRedeem,
+    Math.min(lpAvailable, lpCap),
+    Math.floor(finalBeforeRedeem)
+  );
 
-  const maxRedeemThisBill = Math.min(lpAvailable, lpCap);
-  const appliedRedeem = Math.min(lpRedeem, maxRedeemThisBill, Math.floor(finalBeforeRedeem));
   finalTotal = Math.max(0, finalBeforeRedeem - appliedRedeem);
+  subtotal   = subtotalBase;
 
   document.getElementById('totalLbl').textContent = 'Total: ' + money(subtotal);
   document.getElementById('finalLbl').textContent = 'Final: ' + money(finalTotal);
@@ -465,207 +411,64 @@ function recalc() {
   lpRefreshUI();
 }
 
+
 /* =================
    Cart rendering
    ================= */
 function renderCart() {
-  const tb = document.querySelector('#cartTable tbody');
-  tb.innerHTML = '';
+  const tbody = document.querySelector('#cartTable tbody');
+  tbody.innerHTML = '';
 
-  let gPct = globalPct();
+  const gPct = globalPct(); // global discount %
 
   cart.forEach((it, idx) => {
-    const base   = Number(it.price || 0);
-    const rowPct = Number(it.disc_pct || 0);
-    const effPct = rowPct > 0 ? rowPct : gPct;
+    const basePrice = Number(it.price || 0);
+    const mrp = round0(it.mrp_price || 0);
 
-    const baseR  = round0(base);
-    const afterR = effPct ? round0(base * (1 - effPct/100)) : baseR;
+    // show discounted value visually (global only)
+    const effectivePrice = gPct > 0
+      ? round0(basePrice * (1 - gPct / 100))
+      : round0(basePrice);
 
-    const displayText = effPct ? `(${baseR})${afterR}` : `${baseR}`;
-
-    const priceCell = true
-      ? `
-        <div style="display:flex; gap:4px; justify-content:flex-end; align-items:center;">
-          <span class="orig-muted">(${baseR})</span>
-          <input class="sp-input" data-i="${idx}" type="number" min="0" step="1"
-                 inputmode="numeric" pattern="\\d*" value="${afterR}">
-        </div>`
-      : `<span>${displayText}</span>`;
-
-    const discCell =
-  `<div style="display:flex; gap:6px; justify-content:center; align-items:center;">
-     <input class="disc-input" data-i="${idx}" type="number" min="0" step="1"
-            inputmode="numeric" pattern="\\d*" value="${(it.disc_pct ? Number(it.disc_pct) : '')}">
-     <button type="button" class="disc-apply" data-i="${idx}">Apply</button>
-     <button type="button" class="floor-btn"  data-i="${idx}" title="Set to bought+${MIN_PROFIT}">Floor</button>
-   </div>`;
+    const priceCell = `
+      <div style="display:flex; gap:4px; justify-content:flex-end; align-items:center;">
+        ${gPct > 0 ? `<span class="orig-muted">(${round0(basePrice)})</span>` : ``}
+        <input
+          class="sp-input"
+          data-i="${idx}"
+          type="number"
+          min="0"
+          step="1"
+          inputmode="numeric"
+          pattern="\\d*"
+          value="${effectivePrice}">
+      </div>
+    `;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${it.brand||''}</td>
-      <td>${it.category||''}</td>
-      <td>${it.size||''}</td>
+      <td>${it.brand || ''}</td>
+      <td>${it.category || ''}</td>
+      <td>${it.size || ''}</td>
       <td>
         <button type="button" data-act="minus" data-i="${idx}">-</button>
-        <span style="display:inline-block; width:28px; text-align:center;">${it.qty}</span>
+        <span style="display:inline-block; width:28px; text-align:center;">
+          ${it.qty}
+        </span>
         <button type="button" data-act="plus" data-i="${idx}">+</button>
       </td>
-      <td style="text-align:right;">${round0(it.mrp_price||0)}</td>
+      <td style="text-align:right;">${mrp}</td>
       <td style="text-align:right;">${priceCell}</td>
-      <td style="text-align:center;">${discCell}</td>
-      <td style="text-align:right;"></td>
+      <td></td>
     `;
-    tb.appendChild(tr);
+
+    tbody.appendChild(tr);
   });
 
   recalc();
   invalidateCheckout();
   persistState();
 }
-
-/* =================
-   Floor price button (per-row)
-   ================= */
-document.querySelector('#cartTable').addEventListener('click', (e) => {
-  const btn = e.target.closest('button.floor-btn');
-  if (!btn) return;
-
-  const i = +btn.dataset.i;
-  if (Number.isNaN(i) || !cart[i]) return;
-
-  const base   = Number(cart[i].price || 0);
-  const bought = Number(cart[i].bought_price || 0);
-  const floor  = round0(bought + MIN_PROFIT);
-
-  if (base <= 0) { alert('Invalid base price'); return; }
-
-  if (floor >= round0(base)) {
-    cart[i].disc_pct = 0;
-    renderCart();
-    return;
-  }
-
-  const pct = (1 - (floor / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;
-  renderCart();
-});
-
-/* =================
-   Qty & remove controls
-   ================= */
-document.querySelector('#cartTable').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-act]');
-  if (!btn) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  const act = btn.getAttribute('data-act');
-  const i = +btn.getAttribute('data-i');
-  if (Number.isNaN(i) || !cart[i]) return;
-
-  if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty) - 1); if (cart[i].qty === 0) cart.splice(i, 1); renderCart(); }
-  if (act === 'plus')  { cart[i].qty = Number(cart[i].qty) + 1; renderCart(); }
-  if (act === 'remove'){ cart.splice(i, 1); renderCart(); }
-});
-
-/* =================
-   Per-row discount
-   ================= */
-const ALLOWED_CODES = new Set([0,10,15,20,25,30,35]);
-document.querySelector('#cartTable').addEventListener('click', (e) => {
-  const btn = e.target.closest('button.disc-apply');
-  if (!btn) return;
-
-  const i = +btn.dataset.i;
-  if (Number.isNaN(i) || !cart[i]) return;
-
-  const input = document.querySelector(`input.disc-input[data-i="${i}"]`);
-  let raw = (input?.value || '').trim();
-
-  if (raw === '') {
-    cart[i].disc_pct = 0;
-    renderCart();
-    return;
-  }
-
-  if (raw.endsWith('%')) raw = raw.slice(0, -1);
-  const pct = Number(raw);
-
-  if (!ALLOWED_CODES.has(pct)) {
-    alert('Invalid Code');
-    input.focus(); input.select();
-    return;
-  }
-
-  const unitSell   = Number(cart[i].price || 0);
-  const unitBought = Number(cart[i].bought_price || 0);
-  const unitAfter  = unitSell * (1 - pct / 100);
-
-  if (unitAfter < (unitBought + 100)) {
-    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    return;
-  }
-
-  cart[i].disc_pct = pct;
-  input.value = String(pct);
-  renderCart();
-});
-
-/* =================
-   Admin after-price edits
-   ================= */
-document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!e.target.classList.contains('sp-input')) return;
-
-  const i = +e.target.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
-
-  const base   = Number(cart[i].price || 0);
-  const bought = Number(cart[i].bought_price || 0);
-  const raw    = parseFloat(e.target.value);
-  const afterInput = round0(isNaN(raw) ? 0 : raw);
-  e.target.value = afterInput;
-
-  const currentPct   = Number(cart[i].disc_pct || 0);
-  const currentAfter = currentPct > 0 ? round0(base * (1 - currentPct/100)) : round0(base);
-
-  if (afterInput <= 0) { e.target.value = currentAfter; return; }
-
-  if (afterInput >= round0(base)) {
-    cart[i].disc_pct = 0;
-    e.target.value = round0(base);
-    renderCart();
-    return;
-  }
-
-  if (afterInput < (round0(bought) + 100)) {
-    alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    e.target.value = currentAfter;
-    return;
-  }
-
-  const pct = (1 - (afterInput / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;
-  renderCart();
-});
-
-/* =================
-   Keep per-row % tidy
-   ================= */
-document.querySelector('#cartTable').addEventListener('change', (e)=>{
-  if (!e.target.classList.contains('disc-input')) return;
-  const i = +e.target.getAttribute('data-i');
-  if (isNaN(i) || !cart[i]) return;
-
-  const raw = (e.target.value ?? '').trim();
-  if (raw === '') return;
-
-  let v = parseFloat(raw);
-  if (isNaN(v) || v < 0) v = 0;
-  e.target.value = String(v);
-});
 
 /* =================
    Global Discount
@@ -685,17 +488,6 @@ document.getElementById('applyDiscount').addEventListener('click', ()=>{
   const ALLOWED = new Set([10,15,20,25,30,35]);
   if (isNaN(pct) || !ALLOWED.has(pct)) { alert('Invalid Code'); return; }
 
-  for (const it of cart) {
-    const rowPct = Number(it.disc_pct||0);
-    const usePct = rowPct > 0 ? rowPct : pct;
-    const unitSell   = Number(it.price || 0);
-    const unitBought = Number(it.bought_price || 0);
-    const unitAfter  = unitSell * (1 - usePct/100);
-    if (usePct > 0 && unitAfter < (unitBought + 100)) {
-      alert(`Maximum discount reached for ${it.brand || 'item'} (${it.category || ''} ${it.size || ''}).`);
-      return;
-    }
-  }
 
   appliedDiscount = String(pct);
   document.getElementById('discount').value = String(pct);
@@ -734,8 +526,7 @@ async function addBarcode() {
       mrp_price: round0(j.item.mrp_price),
       price:     round0(j.item.price),
       bought_price: Number(j.item.bought_price || 0),
-      qty: Number(j.item.qty || 1),
-      disc_pct: undefined
+      qty: Number(j.item.qty || 1)
     };
     upsertCartItem(item);
   } catch { alert('Network error'); }
@@ -753,7 +544,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   const size = document.getElementById('mSize').value;
   const category = document.getElementById('mCategory').value;
   if (!brand || !price) { alert('Enter brand and price'); return; }
-  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price, disc_pct: undefined });
+  upsertCartItem({ brand, category, size, qty, mrp_price: price, bought_price: price, price});
   document.getElementById('mBrand').value = ''; document.getElementById('mPrice').value = ''; document.getElementById('mQty').value = 1;
 });
 
@@ -774,7 +565,7 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
     const row = document.createElement('div'); row.style.borderBottom='1px solid #eee'; row.style.padding='6px';
     row.innerHTML = `<strong>${it.brand}</strong> — ${it.category}, ${it.size} | MRP: ${mrpR} | Price: ${priceR} <button>Add</button>`;
     row.querySelector('button').addEventListener('click', ()=> 
-      upsertCartItem({...it, qty:1, disc_pct: undefined, mrp_price: mrpR, price: priceR})
+      upsertCartItem({...it, qty:1, mrp_price: mrpR, price: priceR})
     );
     box.appendChild(row);
   });
@@ -877,8 +668,7 @@ proceedBtn.addEventListener('click', async ()=>{
         qty: Number(i.qty||0),
         mrp_price: round0(i.mrp_price||0),
         bought_price: Number(i.bought_price||0),
-        price: round0(i.price||0),
-        disc_pct: Number(i.disc_pct||0)
+        price: round0(i.price||0)
       })),
       discount: appliedDiscount,
       redeem_points: Number(lpRedeem || 0),
