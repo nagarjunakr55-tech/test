@@ -1014,31 +1014,44 @@ async function doAndroidPrintWithOverride(useTotal){
 /* ==========================
    Clear
    ========================== */
-document.getElementById('btnClear').addEventListener('click', ()=>{
+document.getElementById('btnClear').addEventListener('click', () => {
+
+  // reset pricing / discount state
   appliedDiscount = "";
-  document.getElementById('discount').value = '';
+  lpRedeem = 0;
 
-  const nameEl  = document.getElementById('custName');
-  const phoneEl = document.getElementById('custPhone');
-  nameEl.value  = 'Guest';
-  phoneEl.value = '8106204688';
+  // reset customer fields
+  document.getElementById('custName').value = 'Guest';
+  document.getElementById('custPhone').value = '8106204688';
 
-  try {
-    localStorage.removeItem(KEY_NAME);
-    localStorage.removeItem(KEY_PHONE);
-  } catch {}
-
+  // clear cart
   cart = [];
-  renderCart();
 
+  // reset UI + calculations
+  renderCart();
+  invalidateCheckout();
+
+  // clear invoice preview
   document.getElementById('invoicePreview').textContent = '';
-  lastInvoiceId = null; lastPayload = null; lastInvoiceText = "";
+
+  // reset loyalty UI
+  document.getElementById('lpRedeem').value = '';
+  lpAvailable = 0;
+  lpRefreshUI();
+
+  // disable printing
   setPrintEnabled(false);
   setAndroidPrintReady(false);
 
-  lpAvailable = 0; lpRedeem = 0;
-  lpRefreshUI();
+  // clear persisted state
+  try {
+    localStorage.removeItem(KEY_CART);
+    localStorage.removeItem(KEY_DISC);
+    localStorage.removeItem(KEY_NAME);
+    localStorage.removeItem(KEY_PHONE);
+  } catch {}
 });
+
 
 /* =========
    Init
