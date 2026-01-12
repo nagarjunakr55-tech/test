@@ -38,6 +38,13 @@ def create_app() -> Flask:
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
+    @app.context_processor
+    def inject_today_report():
+        from reports_logic import _get_today_totals
+        return {
+            "today_report": _get_today_totals()
+        }
+    
 
     @app.get("/diag")
     def diag():
