@@ -118,6 +118,44 @@ def get_monthly_profit():
         })
     return out
 
+def _get_today_totals():
+    today = date.today()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT date, items, grand_total FROM sales_history")
+    rows = cur.fetchall()
+    conn.close()
+
+    invoices = 0
+    spent = 0.0
+    profit = 0.0
+
+    for date_str, items_json, grand_total in rows:
+        dt = _parse_invoice_dt(date_str)
+        if dt.date() != today:
+            continue
+
+        s = _spent_from_items(items_json)
+        sales = float(grand_total or 0.0)
+
+        invoices += 1
+        spent += s
+        profit += (sales - s)
+
+    spent = round(spent, 2)
+    profit = round(profit, 2)
+
+    return {
+        "label": f"Today ({today.strftime('%d-%m-%Y')})",
+        "year": today.year,
+        "month": today.month,
+        "invoices": invoices,
+        "spent": spent,
+        "profit": profit,
+        "total": round(spent + profit, 2),
+        "is_today": True,   # 👈 marker for UI (optional)
+    }
 
 def get_daily_profit(selected_date_iso: Optional[str] = None):
     """
@@ -180,4 +218,7 @@ def get_daily_profit(selected_date_iso: Optional[str] = None):
             "profit": profit,
             "total": total,
         })
+    today_row = _get_today_totals()
+    if today_row["invoices"] > 0:
+        out.append(today_row)    
     return out
