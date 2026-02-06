@@ -102,7 +102,7 @@ def create_app() -> Flask:
         p = (request.path or "/")
 
         if session.get("user"):
-        session.permanent = True
+            session.permanent = True
 
         # Public endpoints
         if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
