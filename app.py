@@ -31,6 +31,8 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+    app.config["SESSION_PERMANENT"] = True
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
 
     # -----------------------------
     # Health / Diagnostics
@@ -98,6 +100,9 @@ def create_app() -> Flask:
     @app.before_request
     def _auth_guard():
         p = (request.path or "/")
+
+        if session.get("user"):
+        session.permanent = True
 
         # Public endpoints
         if any(p.startswith(pref) for pref in PUBLIC_PREFIXES):
@@ -232,9 +237,14 @@ def create_app() -> Flask:
             if not user:
                 flash("Invalid username or password.", "danger")
                 return render_template("login.html", username=u), 401
-            session["user"] = user  # {'id','username','role'}
+
+            session["user"] = user
+            session.permanent = True   # 🔥 THIS IS CRITICAL
+
             return redirect(_safe_next())
+
         return render_template("login.html")
+
 
     def _safe_next(default_endpoint="billing.billing"):
         raw = request.args.get("next") or ""
