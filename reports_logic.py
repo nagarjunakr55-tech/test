@@ -143,13 +143,18 @@ def _get_today_totals():
     spent = round(spent, 2)
     profit = round(profit, 2)
 
+    total = round(spent + profit, 2)
+    profit_pct = round((profit / total) * 100, 2) if total > 0 else 0.0
+
     return {
         "label": f"Today ({today.strftime('%d-%m-%Y')})",
         "invoices": invoices,
         "spent": spent,
         "profit": profit,
-        "total": round(spent + profit, 2),
+        "profit_pct": profit_pct,
+        "total": total,
     }
+
 
 
 # -----------------------------

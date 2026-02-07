@@ -52,7 +52,9 @@
           <th>Invoices</th>
           <th>Spent</th>
           <th>Profit</th>
+          <th>Profit %</th>
           <th>Total</th>
+
         </tr>
       </thead>
       <tbody>
@@ -60,6 +62,7 @@
           <td>{{ today_report.invoices }}</td>
           <td>₹{{ '%.2f'|format(today_report.spent) }}</td>
           <td>₹{{ '%.2f'|format(today_report.profit) }}</td>
+          <td>{{ '%.2f'|format(today_report.profit_pct) }}%</td>
           <td><strong>₹{{ '%.2f'|format(today_report.total) }}</strong></td>
         </tr>
       </tbody>
