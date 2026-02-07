@@ -94,6 +94,9 @@ def get_monthly_profit():
         spent = round(a["spent"], 2)
         profit = round(a["profit"], 2)
 
+        total = spent + profit
+        profit_pct = round((profit / total) * 100, 2) if total > 0 else 0.0
+
         out.append({
             "year": year,
             "month": month,
@@ -101,8 +104,10 @@ def get_monthly_profit():
             "invoices": a["invoices"],
             "spent": spent,
             "profit": profit,
-            "total": round(spent + profit, 2),
+            "profit_pct": profit_pct,
+            "total": round(total, 2),
         })
+
 
     return out
 

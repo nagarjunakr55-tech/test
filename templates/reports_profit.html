@@ -11,6 +11,7 @@
         <th>Invoices</th>
         <th>Spent</th>
         <th>Profit</th>
+        <th>Profit %</th>
         <th>Total</th>
       </tr>
     </thead>
@@ -22,6 +23,7 @@
         <td>{{ r.invoices }}</td>
         <td>₹{{ '%.2f'|format(r.spent) }}</td>
         <td>₹{{ '%.2f'|format(r.profit) }}</td>
+        <td>{{ '%.2f'|format(r.profit_pct) }}%</td>
         <td><strong>₹{{ '%.2f'|format(r.total) }}</strong></td>
       </tr>
       {% endfor %}
