@@ -1072,7 +1072,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
 /* =========
    Init
    ========= */
-(function init(){
+(async function init(){
   restoreState();
   renderCart();
 
@@ -1081,12 +1081,21 @@ document.getElementById('btnClear').addEventListener('click', () => {
 
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
+  console.log('[DRIP] Init - code param:', code);
   if (code) {
+    console.log('[DRIP] Setting barcode input and calling addBarcode for:', code);
     document.getElementById('barcode').value = code;
-    if (typeof addBarcode === 'function') addBarcode();
+    // Clean URL first to prevent re-processing on reload
     params.delete('code');
     const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
     window.history.replaceState({}, '', clean);
+    // Now add the barcode
+    if (typeof addBarcode === 'function') {
+      await addBarcode();
+      console.log('[DRIP] addBarcode completed');
+    } else {
+      console.error('[DRIP] addBarcode function not found!');
+    }
   }
 })();
 </script>
