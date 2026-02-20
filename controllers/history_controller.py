@@ -28,7 +28,7 @@ def require_admin():
 def inject_admin():
     return {"is_admin": is_admin()}
 
-PER_PAGE = 20
+PER_PAGE = 10
 
 # -----------------------------
 # /history (list + search)
