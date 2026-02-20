@@ -555,14 +555,21 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
 # ---------------------------------
 # Queries for history & reprint
 # ---------------------------------
+_COL_CACHE: dict = {}  # Cache for column existence checks
+
 def _has_col(cur, table: str, col: str) -> bool:
+    key = (table, col)
+    if key in _COL_CACHE:
+        return _COL_CACHE[key]
     cur.execute("""
         SELECT 1
         FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
         LIMIT 1
     """, (table, col))
-    return cur.fetchone() is not None
+    result = cur.fetchone() is not None
+    _COL_CACHE[key] = result
+    return result
 
 def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tuple], bool]:
     """
@@ -591,20 +598,9 @@ def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tu
                 ts_col = c
                 break
 
-        # Build date expr safely
-                # Build date expr safely
+        # Build date expr safely - return raw value, avoid expensive to_timestamp parsing
         if ts_col:
-            # If the column is literally named "date", your schema stores it as TEXT like "15-10-2025 08:15 AM".
-            # Parse it first, then format to a stable display string.
-            if ts_col.lower() == "date":
-                dt_expr = (
-                    "to_char("
-                    "  to_timestamp(date, 'DD-MM-YYYY HH12:MI AM'),"
-                    "  'YYYY-MM-DD HH24:MI'"
-                    ")"
-                )
-            else:
-                dt_expr = f"to_char({ts_col}, 'YYYY-MM-DD HH24:MI')"
+            dt_expr = ts_col
         else:
             dt_expr = "''"
 
