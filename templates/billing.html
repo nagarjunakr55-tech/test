@@ -14,7 +14,7 @@
 
   <label for="custPhone" class="nowrap">Phone</label>
   <input id="custPhone" class="grow" type="tel" inputmode="numeric" pattern="[0-9]*"
-         placeholder="10 digits" maxlength="10" autocomplete="tel" value="8106204688">
+         placeholder="10 digits" maxlength="10" autocomplete="tel">
 </div>
 
 <!-- Barcode (manual input only) -->
@@ -279,6 +279,7 @@ let lpAvailable = 0;   // fetched from backend
 let lpCap       = 100; // fetched from backend; default 100
 let lpRate      = 2;   // points per ₹100; backend can override
 let lpRedeem    = 0;   // user-applied this bill
+let lpLastPhone = '';  // cache: last phone we fetched loyalty for
 
 /* ===== Minimal loyalty behaviour (drop-in; preserves existing names/calls) ===== */
 
@@ -315,6 +316,12 @@ function lpRefreshUI() {
 }
 
 async function fetchAndSetLoyalty(phone){
+  // Cache check: only fetch if phone changed
+  if (lpLastPhone === phone) {
+    lpRefreshUI();
+    return;
+  }
+  
   try {
     const r = await fetch(`/api/loyalty_points?phone=${encodeURIComponent(phone)}`);
     const j = await r.json();
@@ -322,11 +329,14 @@ async function fetchAndSetLoyalty(phone){
       lpAvailable = Number(j.points || 0);
       lpCap       = Number(j.cap || 100);
       lpRate      = Number(j.rate_per_100 || lpRate);
+      lpLastPhone = phone;
     } else {
       lpAvailable = 0;
+      lpLastPhone = phone;
     }
   } catch {
     lpAvailable = 0;
+    lpLastPhone = phone;
   }
   recalc();
   lpRefreshUI();
@@ -609,24 +619,31 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
 
+  const base   = Number(cart[i].price || 0);
   const bought = Number(cart[i].bought_price || 0);
   const raw    = parseFloat(e.target.value);
   const afterInput = round0(isNaN(raw) ? 0 : raw);
   e.target.value = afterInput;
 
-  if (afterInput <= 0) { 
-    e.target.value = round0(cart[i].price || 0); 
-    return; 
+  const currentPct   = Number(cart[i].disc_pct || 0);
+  const currentAfter = currentPct > 0 ? round0(base * (1 - currentPct/100)) : round0(base);
+
+  if (afterInput <= 0) { e.target.value = currentAfter; return; }
+
+  if (afterInput >= round0(base)) {
+    cart[i].disc_pct = 0;
+    renderCart();
+    return;
   }
 
   if (afterInput < (round0(bought) + 100)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    e.target.value = round0(cart[i].price || 0);
+    e.target.value = currentAfter;
     return;
   }
 
-  cart[i].price = afterInput;
-  cart[i].disc_pct = 0;
+  const pct = (1 - (afterInput / base)) * 100;
+  cart[i].disc_pct = Math.round(pct * 100) / 100;
   renderCart();
 });
 
@@ -1030,7 +1047,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
 
   // reset customer fields
   document.getElementById('custName').value = 'Guest';
-  document.getElementById('custPhone').value = '8106204688';
+  document.getElementById('custPhone').value = '';
 
   // clear cart
   cart = [];
@@ -1042,9 +1059,10 @@ document.getElementById('btnClear').addEventListener('click', () => {
   // clear invoice preview
   document.getElementById('invoicePreview').textContent = '';
 
-  // reset loyalty UI
+  // reset loyalty UI and cache
   document.getElementById('lpRedeem').value = '';
   lpAvailable = 0;
+  lpLastPhone = '';
   lpRefreshUI();
 
   // disable printing
