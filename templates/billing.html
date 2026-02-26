@@ -609,32 +609,24 @@ document.querySelector('#cartTable').addEventListener('change', (e)=>{
   const i = +e.target.getAttribute('data-i');
   if (isNaN(i) || !cart[i]) return;
 
-  const base   = Number(cart[i].price || 0);
   const bought = Number(cart[i].bought_price || 0);
   const raw    = parseFloat(e.target.value);
   const afterInput = round0(isNaN(raw) ? 0 : raw);
   e.target.value = afterInput;
 
-  const currentPct   = Number(cart[i].disc_pct || 0);
-  const currentAfter = currentPct > 0 ? round0(base * (1 - currentPct/100)) : round0(base);
-
-  if (afterInput <= 0) { e.target.value = currentAfter; return; }
-
-  if (afterInput >= round0(base)) {
-    cart[i].disc_pct = 0;
-    e.target.value = round0(base);
-    renderCart();
-    return;
+  if (afterInput <= 0) { 
+    e.target.value = round0(cart[i].price || 0); 
+    return; 
   }
 
   if (afterInput < (round0(bought) + 100)) {
     alert(`Maximum discount reached for ${cart[i].brand || 'item'} (${cart[i].category || ''} ${cart[i].size || ''}).`);
-    e.target.value = currentAfter;
+    e.target.value = round0(cart[i].price || 0);
     return;
   }
 
-  const pct = (1 - (afterInput / base)) * 100;
-  cart[i].disc_pct = Math.round(pct * 100) / 100;
+  cart[i].price = afterInput;
+  cart[i].disc_pct = 0;
   renderCart();
 });
 
