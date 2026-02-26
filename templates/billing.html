@@ -365,7 +365,8 @@ function restoreState() {
     const nm = localStorage.getItem(KEY_NAME);
     const ph = localStorage.getItem(KEY_PHONE);
     if (nm) document.getElementById('custName').value = nm;
-    if (ph) document.getElementById('custPhone').value = ph;
+    // Only restore phone if it's a valid 10-digit number, otherwise keep default
+    if (ph && /^\d{10}$/.test(ph)) document.getElementById('custPhone').value = ph;
   } catch {}
 }
 
