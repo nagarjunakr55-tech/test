@@ -438,7 +438,7 @@ function recalc() {
 
     let unitAfterRows = unitSell;
     if (rowPct > 0) {
-      unitAfterRows = unitSell * (1 - rowPct/100);
+      unitAfterRows = Math.round(unitSell * (1 - rowPct/100) * 100) / 100;
     } else {
       eligibleForGlobal += unitSell * qty;
     }
@@ -449,16 +449,16 @@ function recalc() {
   let globalDiscAmt = 0;
   if (gPct > 0) globalDiscAmt = eligibleForGlobal * (gPct/100);
 
-  const finalCandidate = subtotalAfterRows - globalDiscAmt;
+  const finalCandidate = Math.round((subtotalAfterRows - globalDiscAmt) * 100) / 100;
 
   let finalTotalLocal = finalCandidate;
   if (finalCandidate < (boughtTotal + 100)) {
     globalDiscAmt = 0;
-    finalTotalLocal = subtotalAfterRows;
+    finalTotalLocal = Math.round(subtotalAfterRows * 100) / 100;
   }
 
-  finalTotal = Math.max(0, finalTotalLocal);
-  subtotal   = subtotalBase;
+  finalTotal = Math.max(0, Math.round(finalTotalLocal * 100) / 100);
+  subtotal   = Math.round(subtotalBase * 100) / 100;
   let finalBeforeRedeem = Math.max(0, finalTotalLocal);
 
   const maxRedeemThisBill = Math.min(lpAvailable, lpCap);
