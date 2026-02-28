@@ -407,16 +407,20 @@ function invalidateCheckout() {
    Totals
    ========= */
 function recalc() {
-  let subtotalBase = 0;
+  let editedTotal = 0;
+  let originalTotal = 0;
 
   for (const it of cart) {
     const qty = Number(it.qty || 0);
-    const unitSell = Number(it.price || 0);
-    subtotalBase += unitSell * qty;
+    const editedPrice = Number(it.price || 0);
+    const originalPrice = Number(it.original_price || it.price || 0);
+    
+    editedTotal += editedPrice * qty;
+    originalTotal += originalPrice * qty;
   }
 
-  subtotal = Math.round(subtotalBase);
-  let finalBeforeRedeem = subtotal;
+  subtotal = Math.round(originalTotal);  // Total = original price total
+  let finalBeforeRedeem = Math.round(editedTotal);  // Final = edited price total
 
   const maxRedeemThisBill = Math.min(lpAvailable, lpCap);
   const appliedRedeem = Math.min(lpRedeem, maxRedeemThisBill, Math.floor(finalBeforeRedeem));

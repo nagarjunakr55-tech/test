@@ -166,10 +166,11 @@ def calculate_totals(items, discount_input: str):
     mrp_total = 0
     items_effective = []
 
+    original_price_total = 0
+    
     for it in items:
         qty = int(it.get("qty", 1))
         unit_price = int(round(float(it.get("price", 0))))
-        unit_mrp = int(round(float(it.get("mrp_price", 0))))
         
         # Use effective_unit_price if provided (edited price), otherwise use price
         effective_price = it.get("effective_unit_price")
@@ -179,17 +180,18 @@ def calculate_totals(items, discount_input: str):
             effective_price = unit_price
         
         line_total = effective_price * qty
-        line_mrp = unit_mrp * qty
+        line_original = unit_price * qty
         
         subtotal += line_total
-        mrp_total += line_mrp
+        original_price_total += line_original
 
         out_it = dict(it)
         out_it["effective_unit_price"] = effective_price
         out_it["effective_pct"] = 0
         items_effective.append(out_it)
 
-    saved_amount = max(0, mrp_total - subtotal)
+    # Saved = original selling price - edited price (only if positive discount)
+    saved_amount = max(0, original_price_total - subtotal)
     gst = 0
     
     return {
@@ -412,17 +414,8 @@ def generate_invoice_text(
     grand_val = _f(grand_total)
     discount_val = _f(discount_amt)
 
-    # Compute saved_total: canonical definition is subtotal - grand_total
-    computed_saved_total = max(0, int(round(subtotal_val - grand_val)))
-
-    # If caller provided saved_amount, prefer it; else use computed value
-    if saved_amount is not None:
-        try:
-            saved_total = float(saved_amount or 0)
-        except Exception:
-            saved_total = computed_saved_total
-    else:
-        saved_total = computed_saved_total
+    # Use discount_amt as the saved amount (this is the original price - edited price difference)
+    saved_total = max(0, int(round(discount_val)))
 
     # Loyalty block: show Redeemed, Earned, Balance (if applicable)
     if (points_used or points_earned or points_balance is not None):
@@ -637,7 +630,8 @@ def checkout_preview_logic(customer_name: str, phone: str, items: list,
         discount_amt=totals["discount_amt"],
         points_used=use_p,
         points_earned=earn_p,
-        points_balance=bal_p
+        points_balance=bal_p,
+        saved_amount=totals["discount_amt"]
     )
 
     return True, {
@@ -703,7 +697,8 @@ def checkout_finalize_logic(
         discount_amt=totals["discount_amt"],
         points_used=used_pts,
         points_earned=earned_pts,
-        points_balance=new_balance
+        points_balance=new_balance,
+        saved_amount=totals["discount_amt"]
     )
 
     def _persist():
