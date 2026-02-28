@@ -249,9 +249,9 @@ def calculate_totals(items, discount_input: str):
     gst = 0.0
     return {
         "subtotal": int(round(subtotal)),
-        "discount_amt": round(discount_amt_total, 2),  # this is the SAVED amount
+        "discount_amt": int(round(discount_amt_total)),
         "grand_total": int(round(grand_total)),
-        "gst": round(gst, 2),
+        "gst": int(round(gst)),
         "items_effective": items_effective,
     }
 
@@ -317,7 +317,7 @@ def loyalty_simulate_preview(phone: str, grand_total: float, requested_redeem: i
     final_after = pay - use
     earn = _earn_from_amount(final_after)
     bal_after = avail - use + earn
-    return use, earn, bal_after, float(final_after)
+    return use, earn, bal_after, final_after
 
 # billing_logic.py
 EARNING_ENABLED = True  # set False to pause earning
@@ -329,7 +329,7 @@ def loyalty_finalize(phone: str, grand_total: float, requested_redeem: int):
     final_payable = pay - use
     earned = _earn_from_amount(final_payable) if EARNING_ENABLED else 0
     new_bal = lp_upsert_delta(phone, -use + earned)
-    return use, earned, new_bal, float(final_payable)
+    return use, earned, new_bal, final_payable
 
 
 
@@ -677,7 +677,7 @@ def checkout_preview_logic(customer_name: str, phone: str, items: list,
 
     use_p, earn_p, bal_p, final_after = loyalty_simulate_preview(
         phone=phone,
-        grand_total=float(effective_final),
+        grand_total=effective_final,
         requested_redeem=int(redeem_points or 0)
     )
 
@@ -743,7 +743,7 @@ def checkout_finalize_logic(
 
     used_pts, earned_pts, new_balance, final_payable = loyalty_finalize(
         phone=phone,
-        grand_total=float(effective_final),
+        grand_total=effective_final,
         requested_redeem=int(redeem_points or 0)
     )
 
