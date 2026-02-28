@@ -155,103 +155,41 @@ _GUARD_PAD = 100  # backend safety: unit_after must be >= bought + 100
 
 def calculate_totals(items, discount_input: str):
     """
-    Uses per-row item['disc_pct'] when > 0; otherwise applies a global percent from discount_input (e.g., "10" or "10%").
-    Returns items_effective with per-row effective_unit_price and effective_pct so the receipt can show (orig)after.
+    Calculate totals at base price (no discounts).
+    Returns items with effective_unit_price = base price.
+    Saved amount = MRP total - Selling price total.
     """
     if not items:
         raise ValueError("empty_cart")
 
-    # Parse global percent (percent codes only)
-    def _parse_pct(s: str):
-        if not s:
-            return 0.0
-        s = s.strip()
-        if s.endswith("%"):
-            s = s[:-1]
-        try:
-            return float(s)
-        except Exception:
-            return 0.0
-
-    global_pct = _parse_pct(discount_input)
-
-    subtotal = 0.0
-    grand_total = 0.0
-    discount_amt_total = 0.0
-    bought_total = 0.0
+    subtotal = 0
+    mrp_total = 0
     items_effective = []
 
     for it in items:
-        qty         = int(it.get("qty", 1))
-        unit_price  = float(it.get("price", 0))
-        unit_bought = float(it.get("bought_price", 0))
-        row_pct     = float(it.get("disc_pct") or 0.0)
-
-        eff_pct = row_pct if row_pct > 0 else (global_pct if global_pct > 0 else 0.0)
-        unit_after = unit_price * (1.0 - eff_pct/100.0)
-
-        # Per-unit guard
-        if eff_pct > 0 and unit_after < (unit_bought + _GUARD_PAD):
-            brand = it.get("brand") or ""
-            cat   = it.get("category") or ""
-            size  = it.get("size") or ""
-            raise ValueError(f"max_discount_item:{brand}/{cat}/{size}")
-
-        line_sub   = unit_price * qty
-        line_total = unit_after * qty
-        line_disc  = line_sub - line_total
-
-        subtotal            += line_sub
-        grand_total         += line_total
-        discount_amt_total  += line_disc
-        bought_total        += unit_bought * qty
+        qty = int(it.get("qty", 1))
+        unit_price = int(round(float(it.get("price", 0))))
+        unit_mrp = int(round(float(it.get("mrp_price", 0))))
+        
+        line_total = unit_price * qty
+        line_mrp = unit_mrp * qty
+        
+        subtotal += line_total
+        mrp_total += line_mrp
 
         out_it = dict(it)
-        out_it["effective_unit_price"] = int(round(unit_after))
-        out_it["effective_pct"]        = eff_pct
+        out_it["effective_unit_price"] = unit_price
+        out_it["effective_pct"] = 0
         items_effective.append(out_it)
 
-    # Optional cart-wide guard (kept as a safety): allow dropping global effect only.
-    if grand_total < (bought_total + _GUARD_PAD):
-        subtotal = 0.0
-        grand_total = 0.0
-        discount_amt_total = 0.0
-        items_effective2 = []
-        for it in items:
-            qty         = int(it.get("qty", 1))
-            unit_price  = float(it.get("price", 0))
-            unit_bought = float(it.get("bought_price", 0))
-            row_pct     = float(it.get("disc_pct") or 0.0)
-            eff_pct     = row_pct if row_pct > 0 else 0.0
-            unit_after  = unit_price * (1.0 - eff_pct/100.0)
-
-            if eff_pct > 0 and unit_after < (unit_bought + _GUARD_PAD):
-                brand = it.get("brand") or ""
-                cat   = it.get("category") or ""
-                size  = it.get("size") or ""
-                raise ValueError(f"max_discount_item:{brand}/{cat}/{size}")
-
-            line_sub   = unit_price * qty
-            line_total = unit_after * qty
-            line_disc  = line_sub - line_total
-
-            subtotal           += line_sub
-            grand_total        += line_total
-            discount_amt_total += line_disc
-
-            out_it = dict(it)
-            out_it["effective_unit_price"] = int(round(unit_after))
-            out_it["effective_pct"]        = eff_pct
-            items_effective2.append(out_it)
-
-        items_effective = items_effective2
-
-    gst = 0.0
+    saved_amount = max(0, mrp_total - subtotal)
+    gst = 0
+    
     return {
-        "subtotal": int(round(subtotal)),
-        "discount_amt": int(round(discount_amt_total)),
-        "grand_total": int(round(grand_total)),
-        "gst": int(round(gst)),
+        "subtotal": subtotal,
+        "discount_amt": saved_amount,
+        "grand_total": subtotal,
+        "gst": gst,
         "items_effective": items_effective,
     }
 
@@ -468,7 +406,7 @@ def generate_invoice_text(
     discount_val = _f(discount_amt)
 
     # Compute saved_total: canonical definition is subtotal - grand_total
-    computed_saved_total = max(0.0, subtotal_val - grand_val)
+    computed_saved_total = max(0, int(round(subtotal_val - grand_val)))
 
     # If caller provided saved_amount, prefer it; else use computed value
     if saved_amount is not None:
@@ -495,14 +433,14 @@ def generate_invoice_text(
         lines.append("-" * COLS)
 
     if gst_val and gst_val > 0:
-        lines.append(f"{clamp('GST', LBL_W)}{format(gst_val, '.2f').rjust(COLS - LBL_W)}")
+        lines.append(f"{clamp('GST', LBL_W)}{str(int(round(gst_val))).rjust(COLS - LBL_W)}")
 
     # Saved: show the total rupee savings (positive number). If saved_total computed as 0, only show if > 0.01
     if saved_total and saved_total > 0.009:
-        lines.append(f"{clamp('Saved', LBL_W)}{format(saved_total, '.2f').rjust(COLS - LBL_W)}")
+        lines.append(f"{clamp('Saved', LBL_W)}{str(int(round(saved_total))).rjust(COLS - LBL_W)}")
 
     # Final total
-    lines.append(f"{clamp('Total', LBL_W)}{format(grand_val, '.2f').rjust(COLS - LBL_W)}")
+    lines.append(f"{clamp('Total', LBL_W)}{str(int(round(grand_val))).rjust(COLS - LBL_W)}")
 
     lines.append("-" * COLS)
 

@@ -38,12 +38,12 @@
                 method="post"
                 action="{{ url_for('history.invoices_update_total', invoice_id=row[0]) }}"
                 style="display:flex; gap:6px; align-items:center;">
-            <input type="number" step="0.01" name="grand_total"
-                   value="{{ "%.2f"|format(row[4]) }}" style="width:120px; padding:4px;">
+            <input type="number" step="1" name="grand_total"
+                   value="{{ row[4]|int }}" style="width:120px; padding:4px;">
             <button class="btn" type="submit">Save</button>
           </form>
         {% else %}
-          ₹{{ "%.2f"|format(row[4]) }}
+          ₹{{ row[4]|int }}
         {% endif %}
         </td>
 
