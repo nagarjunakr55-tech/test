@@ -171,14 +171,21 @@ def calculate_totals(items, discount_input: str):
         unit_price = int(round(float(it.get("price", 0))))
         unit_mrp = int(round(float(it.get("mrp_price", 0))))
         
-        line_total = unit_price * qty
+        # Use effective_unit_price if provided (edited price), otherwise use price
+        effective_price = it.get("effective_unit_price")
+        if effective_price is not None:
+            effective_price = int(round(float(effective_price)))
+        else:
+            effective_price = unit_price
+        
+        line_total = effective_price * qty
         line_mrp = unit_mrp * qty
         
         subtotal += line_total
         mrp_total += line_mrp
 
         out_it = dict(it)
-        out_it["effective_unit_price"] = unit_price
+        out_it["effective_unit_price"] = effective_price
         out_it["effective_pct"] = 0
         items_effective.append(out_it)
 
@@ -272,20 +279,20 @@ def loyalty_finalize(phone: str, grand_total: float, requested_redeem: int):
 
 
 def generate_invoice_text(
-        invoice_id,
-        customer_name,
-        customer_phone,
-        items,
-        subtotal,
-        gst_amount,
-        grand_total,
-        discount_amt,
+        invoice_id: str,
+        customer_name: str,
+        customer_phone: str,
+        items: List[dict],
+        subtotal: float,
+        gst_amount: float,
+        grand_total: float,
+        discount_amt: float,
         show_time: bool = True,
         # Loyalty (optional)
         points_used: int = 0,
         points_earned: int = 0,
         points_balance: int = None,
-        saved_amount: float | int | None = None,
+        saved_amount: Optional[float] = None,
     ):
     """
     Produce a fixed-width invoice text. Backwards compatible: saved_amount is optional.

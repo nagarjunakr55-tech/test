@@ -436,7 +436,13 @@ function renderCart() {
   tb.innerHTML = '';
 
   cart.forEach((it, idx) => {
-    const price = round0(Number(it.price || 0));
+    const originalPrice = round0(Number(it.original_price || it.price || 0));
+    const currentPrice = round0(Number(it.price || 0));
+    
+    // Show (original)current if price was edited
+    const priceDisplay = (originalPrice !== currentPrice) 
+      ? `<span class="orig-muted">(${originalPrice})</span>` 
+      : '';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -449,7 +455,14 @@ function renderCart() {
         <button type="button" data-act="plus" data-i="${idx}">+</button>
       </td>
       <td style="text-align:right;">${round0(it.mrp_price||0)}</td>
-      <td style="text-align:right;">${price}</td>
+      <td style="text-align:right;">
+        <div style="display:flex; gap:4px; justify-content:flex-end; align-items:center;">
+          ${priceDisplay}
+          <input class="price-input" data-i="${idx}" type="number" min="0" step="1"
+                 inputmode="numeric" pattern="\\d*" value="${currentPrice}" 
+                 style="width:80px; text-align:right;">
+        </div>
+      </td>
       <td style="text-align:right;"></td>
     `;
     tb.appendChild(tr);
@@ -478,6 +491,31 @@ document.querySelector('#cartTable').addEventListener('click', (e) => {
   if (act === 'minus') { cart[i].qty = Math.max(0, Number(cart[i].qty) - 1); if (cart[i].qty === 0) cart.splice(i, 1); renderCart(); }
   if (act === 'plus')  { cart[i].qty = Number(cart[i].qty) + 1; renderCart(); }
   if (act === 'remove'){ cart.splice(i, 1); renderCart(); }
+});
+
+/* =================
+   Price editing
+   ================= */
+document.querySelector('#cartTable').addEventListener('change', (e) => {
+  if (!e.target.classList.contains('price-input')) return;
+
+  const i = +e.target.getAttribute('data-i');
+  if (isNaN(i) || !cart[i]) return;
+
+  const newPrice = round0(parseFloat(e.target.value) || 0);
+  
+  if (newPrice <= 0) {
+    e.target.value = cart[i].price;
+    return;
+  }
+
+  // Store original price on first edit
+  if (!cart[i].original_price) {
+    cart[i].original_price = cart[i].price;
+  }
+
+  cart[i].price = newPrice;
+  renderCart();
 });
 
 
@@ -645,7 +683,8 @@ proceedBtn.addEventListener('click', async ()=>{
         qty: Number(i.qty||0),
         mrp_price: round0(i.mrp_price||0),
         bought_price: Number(i.bought_price||0),
-        price: round0(i.price||0)
+        price: round0(i.original_price || i.price||0),
+        effective_unit_price: round0(i.price||0)
       })),
       discount: "",
       redeem_points: Number(lpRedeem || 0),
