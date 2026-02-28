@@ -248,9 +248,9 @@ def calculate_totals(items, discount_input: str):
 
     gst = 0.0
     return {
-        "subtotal": round(subtotal, 2),
+        "subtotal": int(round(subtotal)),
         "discount_amt": round(discount_amt_total, 2),  # this is the SAVED amount
-        "grand_total": round(grand_total, 2),
+        "grand_total": int(round(grand_total)),
         "gst": round(gst, 2),
         "items_effective": items_effective,
     }
