@@ -672,15 +672,19 @@ function toggleClearButton(inputId, btnId) {
 }
 
 document.getElementById('clearName').addEventListener('click', () => {
-  document.getElementById('custName').value = '';
-  document.getElementById('clearName').style.display = 'none';
+  const input = document.getElementById('custName');
+  input.value = '';
+  input.focus();
+  toggleClearButton('custName', 'clearName');
   invalidateCheckout();
   persistState();
 });
 
 document.getElementById('clearPhone').addEventListener('click', () => {
-  document.getElementById('custPhone').value = '';
-  document.getElementById('clearPhone').style.display = 'none';
+  const input = document.getElementById('custPhone');
+  input.value = '';
+  input.focus();
+  toggleClearButton('custPhone', 'clearPhone');
   invalidateCheckout();
   persistState();
 });
