@@ -10,11 +10,17 @@
 <!-- Customer -->
 <div class="row">
   <label for="custName" class="nowrap">Name</label>
-  <input id="custName" class="grow" type="text" placeholder="Guest" value="Guest" autocomplete="name">
+  <div class="input-wrapper grow">
+    <input id="custName" type="text" placeholder="Guest" value="Guest" autocomplete="name">
+    <button type="button" class="clear-btn" id="clearName" style="display:none;">&times;</button>
+  </div>
 
   <label for="custPhone" class="nowrap">Phone</label>
-  <input id="custPhone" class="grow" type="tel" inputmode="numeric" pattern="[0-9]*"
-         placeholder="10 digits" maxlength="10" autocomplete="tel" value="8106204688">
+  <div class="input-wrapper grow">
+    <input id="custPhone" type="tel" inputmode="numeric" pattern="[0-9]*"
+           placeholder="10 digits" maxlength="10" autocomplete="tel" value="8106204688">
+    <button type="button" class="clear-btn" id="clearPhone" style="display:none;">&times;</button>
+  </div>
 </div>
 
 <!-- Barcode (manual input only) -->
@@ -67,6 +73,39 @@
 
 <style>
   #loyaltyPanel .nowrap { white-space: nowrap; }
+
+  .input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-wrapper input {
+    flex: 1;
+    padding-right: 30px;
+  }
+
+  .clear-btn {
+    position: absolute;
+    right: 6px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+  }
+
+  .clear-btn:hover {
+    color: #333;
+  }
 
   .sp-input{
     width: 6ch;
@@ -601,17 +640,54 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
     try {
       const r = await fetch(`{{ url_for("billing.api_customer_last_name") }}?phone=${ph}`);
       const j = await r.json();
-      if (j.ok && j.name) document.getElementById('custName').value = j.name;
+      if (j.ok && j.name) {
+        document.getElementById('custName').value = j.name;
+        toggleClearButton('custName', 'clearName');
+      }
     } catch {}
 
     lpRedeem = 0;
     await fetchAndSetLoyalty(ph);
   }
 
+  toggleClearButton('custPhone', 'clearPhone');
   invalidateCheckout();
   persistState();
 });
-document.getElementById('custName').addEventListener('input', ()=>{ invalidateCheckout(); persistState(); });
+document.getElementById('custName').addEventListener('input', ()=>{ 
+  invalidateCheckout(); 
+  persistState();
+  toggleClearButton('custName', 'clearName');
+});
+
+/* ==========================
+   Clear button handlers
+   ========================== */
+function toggleClearButton(inputId, btnId) {
+  const input = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  if (input && btn) {
+    btn.style.display = input.value.trim() ? 'flex' : 'none';
+  }
+}
+
+document.getElementById('clearName').addEventListener('click', () => {
+  document.getElementById('custName').value = '';
+  document.getElementById('clearName').style.display = 'none';
+  invalidateCheckout();
+  persistState();
+});
+
+document.getElementById('clearPhone').addEventListener('click', () => {
+  document.getElementById('custPhone').value = '';
+  document.getElementById('clearPhone').style.display = 'none';
+  invalidateCheckout();
+  persistState();
+});
+
+// Show/hide clear buttons on page load
+toggleClearButton('custName', 'clearName');
+toggleClearButton('custPhone', 'clearPhone');
 
 /* Loyalty: Apply/Remove (minimal safe behaviour)
    - can only redeem when lpAvailable >= 50
