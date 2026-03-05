@@ -50,7 +50,7 @@
         <td>+{{ row[5]|int }}</td>  <!-- NEW: rewards earned (₹) -->
 
         <td>
-          <a class="btn reprint-btn" href="{{ url_for('history.reprint', invoice_id=row[0]) }}"
+          <a class="btn" href="{{ url_for('history.reprint', invoice_id=row[0]) }}"
              style="background:#6a1b9a;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
              Reprint
           </a>
@@ -112,15 +112,6 @@ document.addEventListener('submit', async (e) => {
     btn.textContent = oldLabel;
     btn.disabled = false;
   }
-});
-
-// Show loading state on Reprint button click
-document.querySelectorAll('.reprint-btn').forEach(btn => {
-  btn.addEventListener('click', function(e) {
-    this.style.opacity = '0.6';
-    this.style.pointerEvents = 'none';
-    this.textContent = 'Loading…';
-  });
 });
 </script>
 

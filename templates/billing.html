@@ -17,8 +17,8 @@
 
   <label for="custPhone" class="nowrap">Phone</label>
   <div class="input-wrapper grow">
-    <input id="custPhone" class="grow" type="tel" inputmode="numeric" pattern="[0-9]*"
-           placeholder="10 digits" maxlength="10" autocomplete="tel">
+    <input id="custPhone" type="tel" inputmode="numeric" pattern="[0-9]*"
+           placeholder="10 digits" maxlength="10" autocomplete="tel" value="8106204688">
     <button type="button" class="clear-btn" id="clearPhone" style="display:none;">&times;</button>
   </div>
 </div>
@@ -633,10 +633,8 @@ document.getElementById('sGo').addEventListener('click', async ()=>{
    Autofill name by phone #
    ========================== */
 document.getElementById('custPhone').addEventListener('input', async (e)=>{
-  const raw = e.target.value;
-  const ph = raw.replace(/\D/g,'').slice(0,10);
-  // Only update value if it changed (preserves keyboard autocomplete)
-  if (raw !== ph) e.target.value = ph;
+  const ph = e.target.value.replace(/\D/g,'').slice(0,10);
+  e.target.value = ph;
 
   if (ph.length === 10) {
     try {
