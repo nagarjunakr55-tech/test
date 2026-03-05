@@ -19,7 +19,7 @@
 
 <pre class="invoice-box" style="font-family:monospace; white-space:pre-wrap;">{{ invoice }}</pre>
 
-<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+<div style="margin-top:12px; margin-bottom:calc(24px + env(safe-area-inset-bottom, 0px)); padding-bottom:16px; display:flex; gap:8px; flex-wrap:wrap;">
   <!-- Browser print view -->
   <a class="btn btn-gray" href="{{ url_for('print_invoice', invoice_id=invoice_id) }}">Print (Browser)</a>
 

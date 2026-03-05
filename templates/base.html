@@ -93,7 +93,7 @@ button, .btn{ background: var(--accent, #2563eb); color:#fff; }
     nav a{ color:#fff; text-decoration:none; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.15); }
     nav a:hover{ background:rgba(255,255,255,.25); }
 
-    .container{ width:100%; max-width:100%; padding:12px; }
+    .container{ width:100%; max-width:100%; padding:12px; padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px)); }
 
     .row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .row>*{ min-width:0; } .grow{ flex:1 1 0; } .nowrap{ white-space:nowrap; }
