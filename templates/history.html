@@ -3,7 +3,7 @@
 <h2>Invoice History</h2>
 
 <form method="get" action="{{ url_for('history.index') }}" style="margin-bottom:15px;">
-  <input type="text" name="q" placeholder="Search by phone or invoice ID" value="{{ search_term }}">
+  <input type="text" name="q" placeholder="Search by name, phone or invoice ID" value="{{ search_term }}">
   <button type="submit" style="background:#1976d2;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;cursor:pointer;">
     Search
   </button>

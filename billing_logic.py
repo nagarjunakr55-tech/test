@@ -523,8 +523,8 @@ def get_invoices(q: str = "", limit: int = 20, offset: int = 0) -> Tuple[List[tu
     where, params = [], []
 
     if q:
-        where.append("(invoice_id ILIKE %s OR phone ILIKE %s)")
-        params.extend([f"%{q}%", f"%{q}%"])
+        where.append("(invoice_id ILIKE %s OR phone ILIKE %s OR customer_name ILIKE %s)")
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     with get_connection() as conn, conn.cursor() as cur:
