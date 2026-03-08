@@ -226,12 +226,6 @@
     Proceed
   </button>
 
-  <button id="btnAndroidPrint"
-        style="background:#795548;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;opacity:0.6;cursor:not-allowed;"
-        disabled>
-    Print
-  </button>
-
   <button id="btnClear"
         style="background:#e53935;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
     Clear
@@ -434,20 +428,16 @@ function upsertCartItem(newItem){
 }
 function setPrintEnabled(on){
   const btn = document.getElementById('btnPrint');
-  if (!btn) return;
-  btn.style.pointerEvents = on ? 'auto' : 'none';
-  btn.style.opacity = on ? '1' : '.5';
-}
-function setAndroidPrintReady(on){
-  const btn = document.getElementById('btnAndroidPrint');
-  btn.disabled = !on;
+  if (btn) {
+    btn.style.pointerEvents = on ? 'auto' : 'none';
+    btn.style.opacity = on ? '1' : '.5';
+  }
 }
 function invalidateCheckout() {
   lastInvoiceId = null;
   lastPayload   = null;
   lastInvoiceText = "";
   setPrintEnabled(false);
-  setAndroidPrintReady(false);
   const btn = document.getElementById('btnProceed');
   btn.disabled = false;
   btn.textContent = 'Proceed';
@@ -759,57 +749,64 @@ document.getElementById('lpRedeem').addEventListener('keydown', (e) => {
 });
 
 /* ==========================
-   Proceed / Print / Clear
+   Single Proceed/Print Button Handler
    ========================== */
 const proceedBtn = document.getElementById('btnProceed');
 proceedBtn.addEventListener('click', async ()=>{
   if (proceedBtn.disabled) return;
-  const name = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
-  const phone = (document.getElementById('custPhone').value || '').trim();
-  if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
-  if (!cart.length) { alert('Cart is empty'); return; }
-  proceedBtn.disabled = true; const oldTxt = proceedBtn.textContent; proceedBtn.textContent = 'Preparing...';
-  try {
-    lastPayload = {
-      customer_name: name,
-      phone,
-      items: cart.map(i => ({
-        code: (i.code || ""),
-        brand: i.brand, category: i.category, size: i.size,
-        qty: Number(i.qty||0),
-        mrp_price: round0(i.mrp_price||0),
-        bought_price: Number(i.bought_price||0),
-        price: round0(i.original_price || i.price||0),
-        effective_unit_price: round0(i.price||0)
-      })),
-      discount: "",
-      redeem_points: Number(lpRedeem || 0),
-      preview: true
-    };
-    const res = await fetch('{{ url_for("billing.api_checkout") }}', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
-    });
-    const j = await res.json();
-    if (!j.ok) { alert(j.error || 'Preview failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
-    lastInvoiceId = null;
-    lastInvoiceText = j.invoice_text || '';
-    document.getElementById('invoicePreview').textContent = lastInvoiceText;
-    setPrintEnabled(true);
-    setAndroidPrintReady(true);
-    proceedBtn.textContent = 'Ready to Print';
-  } catch {
-    alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
+  
+  // First click: Preview step
+  if (proceedBtn.textContent === 'Proceed') {
+    const name = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
+    const phone = (document.getElementById('custPhone').value || '').trim();
+    if (!/^\d{10}$/.test(phone)) { alert('Enter valid 10-digit phone'); return; }
+    if (!cart.length) { alert('Cart is empty'); return; }
+    
+    proceedBtn.disabled = true; 
+    const oldTxt = proceedBtn.textContent; 
+    proceedBtn.textContent = 'Preparing...';
+    
+    try {
+      lastPayload = {
+        customer_name: name,
+        phone,
+        items: cart.map(i => ({
+          code: (i.code || ""),
+          brand: i.brand, category: i.category, size: i.size,
+          qty: Number(i.qty||0),
+          mrp_price: round0(i.mrp_price||0),
+          bought_price: Number(i.bought_price||0),
+          price: round0(i.original_price || i.price||0),
+          effective_unit_price: round0(i.price||0)
+        })),
+        discount: "",
+        redeem_points: Number(lpRedeem || 0),
+        preview: true
+      };
+      const res = await fetch('{{ url_for("billing.api_checkout") }}', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lastPayload)
+      });
+      const j = await res.json();
+      if (!j.ok) { alert(j.error || 'Preview failed'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt; return; }
+      
+      lastInvoiceId = null;
+      lastInvoiceText = j.invoice_text || '';
+      document.getElementById('invoicePreview').textContent = lastInvoiceText;
+      setPrintEnabled(true);
+      proceedBtn.textContent = 'Ready to Print';
+      proceedBtn.disabled = false;
+    } catch {
+      alert('Network error'); proceedBtn.disabled = false; proceedBtn.textContent = oldTxt;
+    }
+  }
+  // Second click: Save and Print step
+  else if (proceedBtn.textContent === 'Ready to Print') {
+    if (!lastPayload) { alert('Please click Proceed first.'); return; }
+    
+    // Open manual total modal for final amount confirmation
+    openManualTotalModal(finalTotal);
   }
 });
-
-/* Optional desktop print preview */
-const btnPrintEl = document.getElementById('btnPrint');
-if (btnPrintEl) {
-  btnPrintEl.addEventListener('click', (e)=>{
-    if (!lastPayload) { e.preventDefault(); alert('Please click Proceed first.'); return; }
-    window.print();
-  });
-}
 
 /* SMS text */
 function buildSmsText(name, amt, earned = 0) {
@@ -854,21 +851,13 @@ document.getElementById('manualTotalOk').addEventListener('click', ()=>{
   doAndroidPrintWithOverride(val);
 });
 
-/* Single handler for Android Print -> opens POP */
-const _printBtn = document.getElementById('btnAndroidPrint');
-_printBtn.addEventListener('click', (e)=>{
-  e.preventDefault();
-  if (!lastPayload) { alert('Please click Proceed first.'); return; }
-  openManualTotalModal(finalTotal); // pre-fill with computed final
-}, true); // capture, so no other handler can run before this
-
 /* Save/print using EXACT override amount everywhere */
 
 async function doAndroidPrintWithOverride(useTotal){
   // useTotal = exact rupee amount user chose in the modal (Number or numeric string)
   if (!lastPayload) { alert('Please click Proceed first.'); return; }
 
-  const btn = document.getElementById('btnAndroidPrint');
+  const btn = document.getElementById('btnProceed');
   if (!btn || btn.disabled) return;
 
   // normalize amount
@@ -949,7 +938,6 @@ async function doAndroidPrintWithOverride(useTotal){
         AndroidNative.printReceiptDirect(lastInvoiceText || '', phone || '', smsText || '');
         btn.textContent = 'Sent to printer';
         // Don't fall through to deep links - we already printed
-        setAndroidPrintReady(false);
         setPrintEnabled(true);
         return; // IMPORTANT: Exit here to prevent double printing
       } catch (e) {
@@ -974,7 +962,6 @@ async function doAndroidPrintWithOverride(useTotal){
     btn.textContent = 'Sent to printer';
 
     // mark print-ready UI (so user can reprint / re-send)
-    setAndroidPrintReady(false); // we've just printed; disable until next proceed
     setPrintEnabled(true);
 
   } catch (e) {
@@ -1020,7 +1007,6 @@ document.getElementById('btnClear').addEventListener('click', () => {
 
   // disable printing
   setPrintEnabled(false);
-  setAndroidPrintReady(false);
 
   // clear persisted state
   try {
