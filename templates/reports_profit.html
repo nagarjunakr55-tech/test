@@ -35,7 +35,7 @@
         <th>{{ totals.invoices }}</th>
         <th>₹{{ '%.2f'|format(totals.spent) }}</th>
         <th>₹{{ '%.2f'|format(totals.profit) }}</th>
-        <th></th>
+        <th>{{ '%.2f'|format(totals.profit_pct) }}%</th>
         <th><strong>₹{{ '%.2f'|format(totals.total) }}</strong></th>
       </tr>
     </tfoot>
