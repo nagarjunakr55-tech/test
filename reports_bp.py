@@ -20,10 +20,6 @@ def profit():
     }
     totals["total"] = round(totals["spent"] + totals["profit"], 2)
 
-    totals["profit_pct"] = round(
-        (totals["profit"] / totals["total"]) * 100, 2
-    ) if totals["total"] > 0 else 0.0
-
     return render_template("reports_profit.html", rows=rows, totals=totals)
 
 
