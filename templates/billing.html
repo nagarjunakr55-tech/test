@@ -855,7 +855,7 @@ function closeManualTotalModal() {
   document.getElementById('manualTotalModal').style.display = 'none';
 }
 document.getElementById('manualTotalInput').addEventListener('input', (e)=>{
-  e.target.value = e.target.value.replace(/\D/g,'').slice(0,7);
+  e.target.value = e.target.value.replace(/\D/g,'').slice(0,8);
 });
 document.getElementById('manualTotalCancel').addEventListener('click', ()=>{
   manualOverrideTotal = null;
