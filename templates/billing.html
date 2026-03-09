@@ -243,14 +243,36 @@
 <!-- Manual Total Modal (POP) -->
 <div id="manualTotalModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2000;">
   <div style="background:#fff; margin:18vh auto; padding:14px; width:320px; box-shadow:0 10px 30px rgba(0,0,0,.25); border-radius:8px;">
+    
     <h4 style="margin-top:0;">Final Amount</h4>
+
     <div class="row" style="gap:8px; align-items:center;">
       <span>₹</span>
-      <input id="manualTotalInput" type="text" inputmode="numeric" pattern="\\d*" maxlength="7" style="flex:1; text-align:right; padding:6px; border:1px solid #ddd;">
+      <input 
+        id="manualTotalInput" 
+        type="text" 
+        inputmode="numeric" 
+        pattern="\d*" 
+        maxlength="8"
+        style="flex:1; text-align:right; padding:6px; border:1px solid #ddd;">
     </div>
+
     <div class="row" style="margin-top:12px; justify-content:flex-end; gap:8px;">
-      <button id="manualTotalCancel" type="button">Cancel</button>
-      <button id="manualTotalOk" type="button" style="background:#4caf50;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">Print</button>
+      
+      <button 
+        id="manualTotalCancel" 
+        type="button"
+        style="background:#f44336;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">
+        Cancel
+      </button>
+
+      <button 
+        id="manualTotalOk" 
+        type="button" 
+        style="background:#4caf50;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">
+        Print
+      </button>
+
     </div>
   </div>
 </div>
