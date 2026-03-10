@@ -344,6 +344,9 @@ let lpRate      = 2;   // points per ₹100; backend can override
 let lpRedeem    = 0;   // user-applied this bill
 let lpLastPhone = '';  // cache: last phone we fetched loyalty for
 
+// Track whether name was populated by phone search vs manual entry
+let namePopulatedByPhone = false;
+
 /* ===== Minimal loyalty behaviour (drop-in; preserves existing names/calls) ===== */
 
 /* clamp redeem: only allow multiples of 50, >=50, and <= min(lpAvailable, lpCap) */
@@ -663,6 +666,7 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
       const r = await fetch(`{{ url_for("billing.api_customer_last_name") }}?phone=${ph}`);
       const j = await r.json();
       if (j.ok && j.name) {
+        namePopulatedByPhone = true;  // Mark that name was populated by phone
         document.getElementById('custName').value = j.name;
         toggleClearButton('custName', 'clearName');
       }
@@ -676,7 +680,29 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
   invalidateCheckout();
   persistState();
 });
-document.getElementById('custName').addEventListener('input', ()=>{ 
+document.getElementById('custName').addEventListener('input', async (e)=>{ 
+  // Reset the flag whenever name is manually changed
+  if (namePopulatedByPhone) {
+    // If name was populated by phone and user changes it, don't trigger phone search
+    namePopulatedByPhone = false;
+  } else {
+    // Name was manually entered, search for phone
+    const name = e.target.value.trim();
+    if (name && name.length > 1) {  // Only search if name has some content
+      try {
+        const r = await fetch(`{{ url_for("billing.api_customer_last_phone") }}?name=${encodeURIComponent(name)}`);
+        const j = await r.json();
+        if (j.ok && j.phone) {
+          document.getElementById('custPhone').value = j.phone;
+          toggleClearButton('custPhone', 'clearPhone');
+          // Fetch loyalty points for the found phone
+          lpRedeem = 0;
+          await fetchAndSetLoyalty(j.phone);
+        }
+      } catch {}
+    }
+  }
+  
   invalidateCheckout(); 
   persistState();
   toggleClearButton('custName', 'clearName');
@@ -697,6 +723,7 @@ document.getElementById('clearName').addEventListener('click', () => {
   const input = document.getElementById('custName');
   input.value = '';
   input.focus();
+  namePopulatedByPhone = false;  // Reset flag when name is cleared
   toggleClearButton('custName', 'clearName');
   invalidateCheckout();
   persistState();
@@ -706,6 +733,7 @@ document.getElementById('clearPhone').addEventListener('click', () => {
   const input = document.getElementById('custPhone');
   input.value = '';
   input.focus();
+  namePopulatedByPhone = false;  // Reset flag when phone is cleared
   toggleClearButton('custPhone', 'clearPhone');
   invalidateCheckout();
   persistState();

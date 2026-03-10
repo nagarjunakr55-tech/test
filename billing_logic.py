@@ -131,6 +131,21 @@ def get_last_customer_name(phone: str):
     return row[0] if row else None
 
 
+def get_last_phone_by_name(name: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT phone
+        FROM sales_history
+        WHERE customer_name ILIKE %s
+        ORDER BY id DESC
+        LIMIT 1
+    """, (name,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
 # ---------------------------------
 # Invoice ID
 # ---------------------------------

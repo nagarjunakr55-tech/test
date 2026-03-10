@@ -12,6 +12,7 @@ from billing_logic import (
     find_product_by_barcode,
     search_products,
     get_last_customer_name,
+    get_last_phone_by_name,
     calculate_totals,
     lp_get_balance,
     loyalty_simulate_preview,
@@ -300,6 +301,14 @@ def api_customer_last_name():
         return jsonify({"ok": False, "name": ""})
     name = get_last_customer_name(phone)
     return jsonify({"ok": True, "name": name or ""})
+
+@billing_bp.get("/api/customer_last_phone", endpoint="api_customer_last_phone")
+def api_customer_last_phone():
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "phone": ""})
+    phone = get_last_phone_by_name(name)
+    return jsonify({"ok": True, "phone": phone or ""})
 
 @billing_bp.post("/api/search_products", endpoint="api_search_products")
 def api_search_products():
