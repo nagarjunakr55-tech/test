@@ -140,7 +140,7 @@ def get_last_phone_by_name(name: str):
         WHERE customer_name ILIKE %s
         ORDER BY id DESC
         LIMIT 1
-    """, (name,))
+    """, (f"%{name}%",))
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
