@@ -182,19 +182,89 @@ def api_checkout():
     # -----------------------
     invoice_id = (data.get("invoice_id") or "").strip() or generate_unique_invoice_id()
 
-    # Strategy:
-    #  - If client provided override_total we want to honor that final charge.
-    #  - We still MUST deduct the redeemed points (capped by user's allowance).
-    #  - To avoid double-deducting, we'll:
-    #      1) determine how many points can actually be used (cap) via loyalty_simulate_preview
-    #      2) call loyalty_finalize in a way that causes it to deduct those points, but return a final_payable
-    #         that equals effective_final wherever possible. We do that by passing grand_total = effective_final + applied_redeem.
-    #
-    # This ensures: final_payable = (effective_final + applied_redeem) - used_pts == effective_final (when used_pts == applied_redeem).
-    #
-    # If the loyalty system caps used_pts < requested_redeem, final_payable will be higher than the requested effective_final
-    # and we'll convey that back to the client so they know the requested redeem couldn't be honoured fully.
+    # FAST PATH: When async_save is True, we skip the synchronous loyalty_finalize
+    # and use the preview values instead. The actual loyalty deduction happens in background.
+    if async_save:
+        # Use preview simulation for immediate response (no DB wait)
+        sim_use_p, sim_earn_p, sim_bal_p, sim_final_after = loyalty_simulate_preview(
+            phone=phone, grand_total=float(computed_grand_total), requested_redeem=redeem
+        )
+        
+        # Use preview values for immediate invoice generation
+        used_pts = int(sim_use_p or 0)
+        earned_pts = int(sim_earn_p or 0)
+        new_balance = int(sim_bal_p or 0)
+        final_payable = int(round(float(sim_final_after or effective_final)))
+        
+        saved_amount = int(round(float(totals.get("subtotal", 0)))) - int(round(float(final_payable or 0)))
 
+        invoice_text = generate_invoice_text(
+            invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
+            items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
+            grand_total=final_payable, discount_amt=totals["discount_amt"],
+            points_used=used_pts, points_earned=earned_pts, points_balance=new_balance,
+            saved_amount=saved_amount
+        )
+
+        # Put final invoice into cache so Android can fetch immediately
+        try:
+            _cache_put(invoice_id, invoice_text)
+        except Exception:
+            pass
+
+        # Background: Do loyalty_finalize AND save_to_db together
+        def _persist_with_loyalty():
+            try:
+                # Actually finalize loyalty points (DB write)
+                finalize_grand_total = float(effective_final)
+                if used_pts > 0:
+                    finalize_grand_total = float(effective_final + used_pts)
+                
+                actual_used, actual_earned, actual_balance, actual_final = loyalty_finalize(
+                    phone=phone, grand_total=float(finalize_grand_total), requested_redeem=used_pts
+                )
+                
+                # Persist invoice
+                save_to_db(
+                    invoice_id=invoice_id,
+                    name=cust_name,
+                    phone=phone,
+                    items=items_eff,
+                    subtotal=totals["subtotal"],
+                    discount_amt=totals["discount_amt"],
+                    gst_amt=totals["gst"],
+                    grand_total=actual_final,
+                    invoice_text=invoice_text
+                )
+                # Update points info
+                with get_connection() as conn2, conn2.cursor() as cur2:
+                    cur2.execute("""
+                        UPDATE public.sales_history
+                           SET points_earned=%s,
+                               points_redeemed=%s,
+                               points_synced_at=NOW()
+                         WHERE invoice_id=%s
+                    """, (actual_earned, actual_used, invoice_id))
+                    conn2.commit()
+            except Exception as e:
+                import logging
+                logging.error(f"Background persist failed for {invoice_id}: {e}")
+
+        Thread(target=_persist_with_loyalty, daemon=True).start()
+
+        # Return immediately with preview values
+        return jsonify({
+            "ok": True,
+            "invoice_id": invoice_id,
+            "invoice_text": invoice_text,
+            "points_used": used_pts,
+            "points_earned": earned_pts,
+            "points_balance": new_balance,
+            "saved_amount": saved_amount,
+            "override_used": bool(override_total is not None)
+        })
+
+    # SLOW PATH: Synchronous (when async_save is False)
     # 1) Determine allowed redeem (best-effort) using server-side simulation on a sensible base.
     #    Use the canonical computed grand total for simulation so caps based on subtotal are accurate.
     sim_use_p, sim_earn_p, sim_bal_p, sim_final_after = loyalty_simulate_preview(
@@ -261,13 +331,10 @@ def api_checkout():
             # swallow in background
             pass
 
-    if async_save:
-        Thread(target=_persist, daemon=True).start()
-    else:
-        try:
-            _persist()
-        except Exception as e:
-            return jsonify({"ok": False, "error": f"save_failed: {e}"}), 500
+    try:
+        _persist()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"save_failed: {e}"}), 500
 
     # Return authoritative data to client
     return jsonify({
