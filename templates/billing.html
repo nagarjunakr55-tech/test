@@ -980,17 +980,29 @@ async function doAndroidPrintWithOverride(useTotal){
     const smsText = buildSmsText(name, finalOverride, estEarn);
 
     // Check if running inside Android WebView with native bridge
-    if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.printReceiptDirect === 'function') {
-      // FAST PATH: Print directly without network call - pass invoice text directly
-      try {
-        AndroidNative.printReceiptDirect(lastInvoiceText || '', phone || '', smsText || '');
-        btn.textContent = 'Sent to printer';
-        // Don't fall through to deep links - we already printed
-        setPrintEnabled(true);
-        return; // IMPORTANT: Exit here to prevent double printing
-      } catch (e) {
-        console.error('Direct print failed, falling back to deep link', e);
-        // Fall through to deep link fallback
+    if (typeof AndroidNative !== 'undefined') {
+      // Try instant printing first (NEW METHOD)
+      if (typeof AndroidNative.createAndPrint === 'function') {
+        try {
+          AndroidNative.createAndPrint(lastInvoiceText || '', phone || '', smsText || '');
+          btn.textContent = 'Sent to printer (Instant)';
+          setPrintEnabled(true);
+          return; // IMPORTANT: Exit here to prevent double printing
+        } catch (e) {
+          console.error('Instant print failed, falling back to direct print', e);
+        }
+      }
+      
+      // Fallback to direct print method
+      if (typeof AndroidNative.printReceiptDirect === 'function') {
+        try {
+          AndroidNative.printReceiptDirect(lastInvoiceText || '', phone || '', smsText || '');
+          btn.textContent = 'Sent to printer';
+          setPrintEnabled(true);
+          return; // IMPORTANT: Exit here to prevent double printing
+        } catch (e) {
+          console.error('Direct print failed, falling back to deep link', e);
+        }
       }
     }
     
@@ -1064,6 +1076,43 @@ document.getElementById('btnClear').addEventListener('click', () => {
     localStorage.removeItem(KEY_PHONE);
   } catch {}
 });
+
+
+/* =========
+   API-based Instant Printing (Alternative Method)
+   ========= */
+async function handleInstantPrintViaAPI(invoiceId) {
+  try {
+    const response = await fetch('/api/invoice/instant-print', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        invoice_id: invoiceId
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success && typeof AndroidNative !== 'undefined' && typeof AndroidNative.createAndPrint === 'function') {
+      // Use the new instant printing method with data from API
+      AndroidNative.createAndPrint(
+        data.receipt_text, 
+        data.sms_to, 
+        data.sms_text
+      );
+      console.log('[DRIP] API-based instant printing initiated');
+      return true;
+    } else {
+      console.error('[DRIP] API-based instant printing failed:', data.error || 'AndroidNative not available');
+      return false;
+    }
+  } catch (error) {
+    console.error('[DRIP] API print error:', error);
+    return false;
+  }
+}
 
 
 /* =========

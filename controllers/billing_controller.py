@@ -17,6 +17,7 @@ from billing_logic import (
     lp_get_balance,
     loyalty_simulate_preview,
     loyalty_finalize,
+    get_receipt_text_for_instant_print,
     REDEEM_CAP,
     EARN_PER_100,
 )
@@ -413,3 +414,33 @@ def receipts_tspl(invoice_id):
     tspl.append(f"PRINT {copies},1")
 
     return Response("\n".join(tspl) + "\n", mimetype="text/plain; charset=utf-8")
+
+
+# -----------------------------
+# Instant Printing API
+# -----------------------------
+@billing_bp.post("/api/invoice/instant-print")
+def instant_print_invoice():
+    """API endpoint for instant printing via Android native method"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid JSON'})
+    
+    invoice_id = data.get('invoice_id')
+    if not invoice_id:
+        return jsonify({'success': False, 'error': 'Invoice ID required'})
+    
+    try:
+        receipt_text, sms_to, sms_text = get_receipt_text_for_instant_print(invoice_id)
+        
+        if not receipt_text:
+            return jsonify({'success': False, 'error': 'Invoice not found'})
+        
+        return jsonify({
+            'success': True,
+            'receipt_text': receipt_text,
+            'sms_to': sms_to or '',
+            'sms_text': sms_text or ''
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})

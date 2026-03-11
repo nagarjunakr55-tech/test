@@ -756,3 +756,62 @@ def checkout_finalize_logic(
         "points_earned": earned_pts,
         "points_balance": new_balance
     }
+
+
+def get_receipt_text_for_instant_print(invoice_id: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Generate receipt text for instant printing via Android native method.
+    Returns tuple: (receipt_text, sms_to, sms_text)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    # Get invoice details
+    cur.execute("""
+        SELECT total_amount, customer_phone, created_at, payment_method
+        FROM invoices 
+        WHERE id = %s
+    """, (invoice_id,))
+    
+    invoice = cur.fetchone()
+    if not invoice:
+        conn.close()
+        return "", None, None
+    
+    total_amount, customer_phone, created_at, payment_method = invoice
+    
+    # Get invoice items
+    cur.execute("""
+        SELECT brand, size, selling_price, quantity
+        FROM invoice_items 
+        WHERE invoice_id = %s
+        ORDER BY id
+    """, (invoice_id,))
+    
+    items = cur.fetchall()
+    conn.close()
+    
+    # Generate receipt text lines
+    lines = []
+    lines.append(f"{BRAND_NAME} Fashions")
+    lines.append("=" * 40)
+    lines.append(f"Date: {india_date_str(created_at, include_time=False)}")
+    lines.append(f"Invoice: {invoice_id}")
+    lines.append("-" * 40)
+    
+    # Add items
+    for brand, size, price, qty in items:
+        lines.append(f"{brand} {size} - {qty} x {price:.2f} = {price*qty:.2f}")
+    
+    lines.append("-" * 40)
+    lines.append(f"Total: {total_amount:.2f}")
+    lines.append(f"Payment: {payment_method}")
+    lines.append("=" * 40)
+    lines.append("Thanks - DRIP")
+    
+    receipt_text = "\n".join(lines)
+    
+    # Generate SMS text
+    sms_text = f"Thank you for shopping at {BRAND_NAME}! Amount: {total_amount:.2f}. Thanks - DRIP"
+    
+    return receipt_text, customer_phone, sms_text
