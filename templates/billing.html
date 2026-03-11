@@ -237,7 +237,7 @@
   <span id="lpAvail" title="Available points">Available: 0</span>
   <span id="lpEarnPreview" title="Estimated points you’ll earn on this bill">(Earn: 0)</span>
   <input id="lpRedeem" type="text" inputmode="numeric" pattern="\d*" maxlength="6" style="width:3.5ch; text-align:right; padding:4px;">
-  <button id="lpApply" type="button" style="background:#00695c;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">Apply</button>
+  <button id="lpFetchApply" type="button" style="background:#00695c;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">Fetch</button>
 </div>
 
 <!-- Manual Total Modal (POP) -->
@@ -343,6 +343,7 @@ let lpCap       = 100; // fetched from backend; default 100
 let lpRate      = 2;   // points per ₹100; backend can override
 let lpRedeem    = 0;   // user-applied this bill
 let lpLastPhone = '';  // cache: last phone we fetched loyalty for
+let lpFetchedForPhone = ''; // track which phone we've fetched points for
 
 // Track whether name was populated by phone search vs manual entry
 let namePopulatedByPhone = false;
@@ -661,6 +662,12 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
   const ph = e.target.value.replace(/\D/g,'').slice(0,10);
   e.target.value = ph;
 
+  // Reset loyalty fetch button if phone changes
+  if (ph !== lpFetchedForPhone) {
+    document.getElementById('lpFetchApply').textContent = 'Fetch';
+    lpFetchedForPhone = '';
+  }
+
   if (ph.length === 10) {
     try {
       const r = await fetch(`{{ url_for("billing.api_customer_last_name") }}?phone=${ph}`);
@@ -673,7 +680,6 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
     } catch {}
 
     lpRedeem = 0;
-    await fetchAndSetLoyalty(ph);
   }
 
   toggleClearButton('custPhone', 'clearPhone');
@@ -695,9 +701,8 @@ document.getElementById('custName').addEventListener('input', async (e)=>{
         if (j.ok && j.phone) {
           document.getElementById('custPhone').value = j.phone;
           toggleClearButton('custPhone', 'clearPhone');
-          // Fetch loyalty points for the found phone
+          // Reset loyalty points when phone is found
           lpRedeem = 0;
-          await fetchAndSetLoyalty(j.phone);
         }
       } catch {}
     }
@@ -734,6 +739,11 @@ document.getElementById('clearPhone').addEventListener('click', () => {
   input.value = '';
   input.focus();
   namePopulatedByPhone = false;  // Reset flag when phone is cleared
+  
+  // Reset loyalty fetch button when phone is cleared
+  document.getElementById('lpFetchApply').textContent = 'Fetch';
+  lpFetchedForPhone = '';
+  
   toggleClearButton('custPhone', 'clearPhone');
   invalidateCheckout();
   persistState();
@@ -743,11 +753,28 @@ document.getElementById('clearPhone').addEventListener('click', () => {
 toggleClearButton('custName', 'clearName');
 toggleClearButton('custPhone', 'clearPhone');
 
-/* Loyalty: Apply/Remove (minimal safe behaviour)
-   - can only redeem when lpAvailable >= 50
-   - amounts are clamped to 50-step multiples (50,100,150...) */
-document.getElementById('lpApply').addEventListener('click', () => {
-  // toggle behaviour: clicking Apply when already applied removes redeem
+/* Loyalty: Fetch/Apply button handler */
+document.getElementById('lpFetchApply').addEventListener('click', async () => {
+  const phone = (document.getElementById('custPhone').value || '').trim();
+  
+  // If button says "Fetch", fetch loyalty points
+  if (document.getElementById('lpFetchApply').textContent === 'Fetch') {
+    if (!/^\d{10}$/.test(phone)) {
+      alert('Enter valid 10-digit phone to fetch loyalty points');
+      document.getElementById('custPhone').focus();
+      return;
+    }
+    
+    // Fetch loyalty points
+    await fetchAndSetLoyalty(phone);
+    lpFetchedForPhone = phone;
+    
+    // Change button to "Apply" after successful fetch
+    document.getElementById('lpFetchApply').textContent = 'Apply';
+    return;
+  }
+  
+  // If button says "Apply", apply loyalty points (toggle behaviour)
   if (lpRedeem && lpRedeem > 0) {
     lpRedeem = 0;
     recalc();
@@ -1061,8 +1088,10 @@ document.getElementById('btnClear').addEventListener('click', () => {
 
   // reset loyalty UI and cache
   document.getElementById('lpRedeem').value = '';
+  document.getElementById('lpFetchApply').textContent = 'Fetch';
   lpAvailable = 0;
   lpLastPhone = '';
+  lpFetchedForPhone = '';
   lpRefreshUI();
 
   // disable printing
@@ -1122,8 +1151,7 @@ async function handleInstantPrintViaAPI(invoiceId) {
   restoreState();
   renderCart();
 
-  const ph = (document.getElementById('custPhone').value || '').trim();
-  if (/^\d{10}$/.test(ph)) fetchAndSetLoyalty(ph);
+  // Don't auto-fetch loyalty points on page load - user must click Fetch button
 
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
