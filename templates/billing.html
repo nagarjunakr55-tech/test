@@ -11,7 +11,7 @@
   <label for="custName" class="nowrap">Name</label>
   <div class="input-wrapper grow">
     <input id="custName" type="text" placeholder="Guest" value="Guest" autocomplete="name">
-    <button type="button" class="clear-btn" id="clearName" style="display:none;">&times;</button>
+    <button type="button" class="search-btn" id="searchName" style="display:none;">🔍</button>
   </div>
 
   <label for="custPhone" class="nowrap">Phone</label>
@@ -84,14 +84,14 @@
     padding-right: 30px;
   }
 
-  .clear-btn {
+  .search-btn {
     position: absolute;
     right: 6px;
     background: transparent;
     border: none;
-    font-size: 20px;
+    font-size: 16px;
     line-height: 1;
-    color: #999;
+    color: #666;
     cursor: pointer;
     padding: 0;
     width: 24px;
@@ -102,7 +102,7 @@
     transition: color 0.2s;
   }
 
-  .clear-btn:hover {
+  .search-btn:hover {
     color: #333;
   }
 
@@ -675,7 +675,7 @@ document.getElementById('custPhone').addEventListener('input', async (e)=>{
       if (j.ok && j.name) {
         namePopulatedByPhone = true;  // Mark that name was populated by phone
         document.getElementById('custName').value = j.name;
-        toggleClearButton('custName', 'clearName');
+        toggleSearchButton('custName', 'searchName');
       }
     } catch {}
 
@@ -691,26 +691,11 @@ document.getElementById('custName').addEventListener('input', async (e)=>{
   if (namePopulatedByPhone) {
     // If name was populated by phone and user changes it, don't trigger phone search
     namePopulatedByPhone = false;
-  } else {
-    // Name was manually entered, search for phone
-    const name = e.target.value.trim();
-    if (name && name.length > 1) {  // Only search if name has some content
-      try {
-        const r = await fetch(`{{ url_for("billing.api_customer_last_phone") }}?name=${encodeURIComponent(name)}`);
-        const j = await r.json();
-        if (j.ok && j.phone) {
-          document.getElementById('custPhone').value = j.phone;
-          toggleClearButton('custPhone', 'clearPhone');
-          // Reset loyalty points when phone is found
-          lpRedeem = 0;
-        }
-      } catch {}
-    }
   }
   
   invalidateCheckout(); 
   persistState();
-  toggleClearButton('custName', 'clearName');
+  toggleSearchButton('custName', 'searchName');
 });
 
 /* ==========================
@@ -724,14 +709,35 @@ function toggleClearButton(inputId, btnId) {
   }
 }
 
-document.getElementById('clearName').addEventListener('click', () => {
-  const input = document.getElementById('custName');
-  input.value = '';
-  input.focus();
-  namePopulatedByPhone = false;  // Reset flag when name is cleared
-  toggleClearButton('custName', 'clearName');
-  invalidateCheckout();
-  persistState();
+/* ==========================
+   Search button handlers
+   ========================== */
+function toggleSearchButton(inputId, btnId) {
+  const input = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  if (input && btn) {
+    btn.style.display = input.value.trim() && input.value.trim() !== 'Guest' ? 'flex' : 'none';
+  }
+}
+
+document.getElementById('searchName').addEventListener('click', async () => {
+  const name = document.getElementById('custName').value.trim();
+  if (name && name.length > 1 && name !== 'Guest') {
+    try {
+      const r = await fetch(`{{ url_for("billing.api_customer_last_phone") }}?name=${encodeURIComponent(name)}`);
+      const j = await r.json();
+      if (j.ok && j.phone) {
+        document.getElementById('custPhone').value = j.phone;
+        toggleClearButton('custPhone', 'clearPhone');
+        // Reset loyalty points when phone is found
+        lpRedeem = 0;
+      } else {
+        alert('No phone number found for this name');
+      }
+    } catch {
+      alert('Error searching for phone number');
+    }
+  }
 });
 
 document.getElementById('clearPhone').addEventListener('click', () => {
@@ -749,8 +755,8 @@ document.getElementById('clearPhone').addEventListener('click', () => {
   persistState();
 });
 
-// Show/hide clear buttons on page load
-toggleClearButton('custName', 'clearName');
+// Show/hide search buttons on page load
+toggleSearchButton('custName', 'searchName');
 toggleClearButton('custPhone', 'clearPhone');
 
 /* Loyalty: Fetch/Apply button handler */
