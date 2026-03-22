@@ -992,114 +992,122 @@ async function doAndroidPrintWithOverride(useTotal){
   }
 
   try {
-    const res = await fetch('/api/checkout', {
+    // TRUE ASYNC: Fire-and-forget DB save
+    const toSave = {
+      ...lastPayload,
+      preview: false,
+      async: true,
+      override_grand_total: Math.round(finalOverride),   // integer rupees
+      charge_amount: Math.round(finalOverride),
+      redeem_points: Number(lpRedeem || 0)
+    };
+    if (window.__reservedInvoiceId) {
+      toSave.invoice_id = window.__reservedInvoiceId;
+    }
+
+    // Generate invoice ID locally for immediate use
+    const invoiceId = toSave.invoice_id || 'INV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    lastInvoiceId = invoiceId;
+    
+    // Build SMS text and cache immediately (no waiting!)
+    const base = window.location.origin;
+    const estEarn = lpEstimatedEarn(finalOverride);
+    const smsText = buildSmsText(name, finalOverride, estEarn);
+    
+    // Create invoice text from preview for immediate printing
+    const invoiceText = document.getElementById('invoicePreview').textContent || lastInvoiceText || '';
+    
+    // Cache immediately for Android access
+    const cacheData = {
+      invoice_id: invoiceId,
+      invoice_text: invoiceText,
+      phone: phone,
+      sms_text: smsText,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(`invoice_cache_${invoiceId}`, JSON.stringify(cacheData));
+    console.log('[DRIP] Cached invoice data for immediate printing (async save)');
+
+    // Update UI immediately
+    document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
+    
+    // Update loyalty state optimistically
+    lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
+    lpRedeem = 0;
+    lpRefreshUI();
+
+    // Start async DB save (fire-and-forget)
+    fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(toSave),
       credentials: 'same-origin'
+    }).then(async res => {
+      const j = await res.json().catch(()=>null);
+      if (j && j.ok) {
+        console.log('[DRIP] Async save successful:', j.invoice_id);
+        // Update cache with server-confirmed invoice ID if different
+        if (j.invoice_id && j.invoice_id !== invoiceId) {
+          const updatedCache = {...cacheData, invoice_id: j.invoice_id};
+          localStorage.setItem(`invoice_cache_${j.invoice_id}`, JSON.stringify(updatedCache));
+          localStorage.removeItem(`invoice_cache_${invoiceId}`);
+        }
+        // Update remaining points if server provided
+        if (typeof j.remaining_points !== 'undefined') {
+          lpAvailable = Number(j.remaining_points || 0);
+          lpRefreshUI();
+        }
+      } else {
+        console.error('[DRIP] Async save failed:', j?.error);
+        // Handle save error - maybe show notification or retry logic
+      }
+    }).catch(err => {
+      console.error('[DRIP] Async save error:', err);
+      // Handle network error
     });
 
-    const j = await res.json().catch(()=>null);
-    if (!j || !j.ok) {
-      btn.disabled = false;
-      btn.textContent = oldTxt;
-      // try to surface server message if available
-      const errMsg = (j && j.error) ? j.error : 'Save failed';
-      alert(errMsg);
-      return;
-    }
-
-    // Server returned success and an invoice
-    const invoiceId = j.invoice_id || null;
-    lastInvoiceId   = invoiceId;
-    lastInvoiceText = j.invoice_text || lastInvoiceText || '';
-
-    // Build SMS text first (needed for cache)
-    const base = window.location.origin;
-    const estEarn = lpEstimatedEarn(finalOverride);
-    const smsText = buildSmsText(name, finalOverride, estEarn);
-
-    // Cache invoice data locally for immediate Android access
-    if (invoiceId && lastInvoiceText) {
-      const cacheData = {
-        invoice_id: invoiceId,
-        invoice_text: lastInvoiceText,
-        phone: phone,
-        sms_text: smsText,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(`invoice_cache_${invoiceId}`, JSON.stringify(cacheData));
-      console.log('[DRIP] Cached invoice data for immediate printing');
-    }
-
-    // Update preview and labels to reflect exact finalOverride
-    document.getElementById('invoicePreview').textContent = lastInvoiceText;
-    document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
-
-    // The server should have deducted the points already (atomic). But update local state:
-    // if server communicated remaining points, update lpAvailable (graceful)
-    if (typeof j.remaining_points !== 'undefined') {
-      lpAvailable = Number(j.remaining_points || 0);
-      lpRedeem = 0; // we've consumed redeem; reset local applied redeem for UI clarity
-    } else {
-      // best-effort: subtract lpRedeem locally so UI matches expectation
-      lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
-      lpRedeem = 0;
-    }
-    lpRefreshUI();
-
-    // Check if running inside Android WebView with native bridge
+    // IMMEDIATE PRINTING (no waiting for DB)
     if (typeof AndroidNative !== 'undefined') {
-      // Try instant printing first (NEW METHOD)
+      // Try instant printing first
       if (typeof AndroidNative.createAndPrint === 'function') {
         try {
-          AndroidNative.createAndPrint(lastInvoiceText || '', phone || '', smsText || '');
+          AndroidNative.createAndPrint(invoiceText || '', phone || '', smsText || '');
           btn.textContent = 'Sent to printer (Instant)';
           setPrintEnabled(true);
-          return; // IMPORTANT: Exit here to prevent double printing
+          return;
         } catch (e) {
           console.error('Instant print failed, falling back to direct print', e);
         }
       }
       
-      // Fallback to direct print method
+      // Fallback to direct print
       if (typeof AndroidNative.printReceiptDirect === 'function') {
         try {
-          AndroidNative.printReceiptDirect(lastInvoiceText || '', phone || '', smsText || '');
+          AndroidNative.printReceiptDirect(invoiceText || '', phone || '', smsText || '');
           btn.textContent = 'Sent to printer';
           setPrintEnabled(true);
-          return; // IMPORTANT: Exit here to prevent double printing
+          return;
         } catch (e) {
           console.error('Direct print failed, falling back to deep link', e);
         }
       }
     }
     
-    // FALLBACK: Use deep links for external browser or older app versions
-    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
+    // FALLBACK: Deep links for external browser
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
 
     try { window.location.href = deeplink; } catch (e) { /* ignore */ }
 
-    // intent fallback + browser fallback to reprint page
-    const intentUrl = `intent://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId || '')}` +
-                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}` +
-                      `#Intent;scheme=drip;package=com.drip.tsplprint;S.browser_fallback_url=${encodeURIComponent(base + '/reprint/' + (invoiceId || ''))};end`;
-    setTimeout(()=>{ try { window.location.replace(intentUrl); } catch {} }, 250);
-    setTimeout(()=>{ try { window.location.href = base + '/reprint/' + (invoiceId || ''); } catch {} }, 1200);
-
     btn.textContent = 'Sent to printer';
-
-    // mark print-ready UI (so user can reprint / re-send)
     setPrintEnabled(true);
 
   } catch (e) {
     btn.disabled = false;
     btn.textContent = oldTxt;
-    console.error('Checkout save error', e);
-    alert('Network error while saving.');
+    console.error('Checkout error', e);
+    alert('Error preparing print. Please try again.');
   }
-}
 
 
 
