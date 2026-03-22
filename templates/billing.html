@@ -1014,6 +1014,24 @@ async function doAndroidPrintWithOverride(useTotal){
     lastInvoiceId   = invoiceId;
     lastInvoiceText = j.invoice_text || lastInvoiceText || '';
 
+    // Build SMS text first (needed for cache)
+    const base = window.location.origin;
+    const estEarn = lpEstimatedEarn(finalOverride);
+    const smsText = buildSmsText(name, finalOverride, estEarn);
+
+    // Cache invoice data locally for immediate Android access
+    if (invoiceId && lastInvoiceText) {
+      const cacheData = {
+        invoice_id: invoiceId,
+        invoice_text: lastInvoiceText,
+        phone: phone,
+        sms_text: smsText,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(`invoice_cache_${invoiceId}`, JSON.stringify(cacheData));
+      console.log('[DRIP] Cached invoice data for immediate printing');
+    }
+
     // Update preview and labels to reflect exact finalOverride
     document.getElementById('invoicePreview').textContent = lastInvoiceText;
     document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
@@ -1029,11 +1047,6 @@ async function doAndroidPrintWithOverride(useTotal){
       lpRedeem = 0;
     }
     lpRefreshUI();
-
-    // Build & launch Android print
-    const base = window.location.origin;
-    const estEarn = lpEstimatedEarn(finalOverride);
-    const smsText = buildSmsText(name, finalOverride, estEarn);
 
     // Check if running inside Android WebView with native bridge
     if (typeof AndroidNative !== 'undefined') {
@@ -1132,6 +1145,8 @@ document.getElementById('btnClear').addEventListener('click', () => {
     localStorage.removeItem(KEY_DISC);
     localStorage.removeItem(KEY_NAME);
     localStorage.removeItem(KEY_PHONE);
+    // Clear processed barcode to allow re-scanning after clear
+    sessionStorage.removeItem('processed_barcode');
   } catch {}
 });
 
@@ -1174,24 +1189,66 @@ async function handleInstantPrintViaAPI(invoiceId) {
 
 
 /* =========
+   Cache Management
+   ========= */
+function cleanOldCache() {
+  try {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    const keys = Object.keys(localStorage);
+    let cleaned = 0;
+    
+    keys.forEach(key => {
+      if (key.startsWith('invoice_cache_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key) || '{}');
+          if (data.timestamp && (now - data.timestamp) > maxAge) {
+            localStorage.removeItem(key);
+            cleaned++;
+          }
+        } catch (e) {
+          // Remove invalid cache entries
+          localStorage.removeItem(key);
+          cleaned++;
+        }
+      }
+    });
+    
+    if (cleaned > 0) {
+      console.log(`[DRIP] Cleaned ${cleaned} old cache entries`);
+    }
+  } catch (e) {
+    console.error('[DRIP] Cache cleanup failed:', e);
+  }
+}
+
+/* =========
    Init
    ========= */
 (async function init(){
   restoreState();
   renderCart();
+  
+  // Clean old cache entries on page load
+  cleanOldCache();
 
   // Don't auto-fetch loyalty points on page load - user must click Fetch button
 
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();
   console.log('[DRIP] Init - code param:', code);
-  if (code) {
+  
+  // Check if this barcode was already processed in this session
+  const processedCode = sessionStorage.getItem('processed_barcode');
+  if (code && code !== processedCode) {
     console.log('[DRIP] Setting barcode input and calling addBarcode for:', code);
     document.getElementById('barcode').value = code;
     // Clean URL first to prevent re-processing on reload
     params.delete('code');
     const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
     window.history.replaceState({}, '', clean);
+    // Mark that we've processed this code to prevent duplicates
+    sessionStorage.setItem('processed_barcode', code);
     // Now add the barcode
     if (typeof addBarcode === 'function') {
       await addBarcode();
@@ -1199,6 +1256,12 @@ async function handleInstantPrintViaAPI(invoiceId) {
     } else {
       console.error('[DRIP] addBarcode function not found!');
     }
+  } else if (code && code === processedCode) {
+    console.log('[DRIP] Barcode already processed, skipping:', code);
+    // Clean URL to prevent confusion
+    params.delete('code');
+    const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', clean);
   }
 })();
 </script>
