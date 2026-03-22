@@ -925,6 +925,67 @@ function buildSmsText(name, amt, earned = 0) {
   );
 }
 
+/* Generate updated invoice text with manual total */
+function generateUpdatedInvoiceText(name, phone, manualTotal) {
+  // Get the current preview text
+  const previewText = document.getElementById('invoicePreview').textContent || lastInvoiceText || '';
+  
+  // Split into lines
+  const lines = previewText.split('\n');
+  
+  // Find and replace the total/final amount lines
+  const updatedLines = lines.map(line => {
+    // Look for lines containing "Total:" or "Final:" or "Grand Total:" etc.
+    if (line.match(/Total\s*[:\-]\s*Rs\.\s*\d+/i) || 
+        line.match(/Final\s*[:\-]\s*Rs\.\s*\d+/i) ||
+        line.match(/Grand Total\s*[:\-]\s*Rs\.\s*\d+/i) ||
+        line.match(/Total\s*[:\-]\s*₹\s*\d+/i) ||
+        line.match(/Final\s*[:\-]\s*₹\s*\d+/i)) {
+      // Replace with the manual total
+      return line.replace(/Rs\.\s*\d+/i, `Rs. ${manualTotal}`)
+                .replace(/₹\s*\d+/i, `₹${manualTotal}`);
+    }
+    return line;
+  });
+  
+  return updatedLines.join('\n');
+}
+
+/* Test function for manual total replacement (can be removed in production) */
+function testManualTotalReplacement() {
+  const testText = `DRIP Fashions
+Invoice: INV_123
+Date: 22-03-2026
+Customer: Test User
+Phone: 1234567890
+
+Items:
+Shirt - M - 1 - Rs. 500
+Pant - 32 - 1 - Rs. 600
+
+Subtotal: Rs. 1100
+GST: Rs. 99
+Total: Rs. 1199
+Final: Rs. 1199`;
+
+  // Mock the preview text
+  const originalPreview = document.getElementById('invoicePreview').textContent;
+  document.getElementById('invoicePreview').textContent = testText;
+  
+  const result = generateUpdatedInvoiceText('Test User', '1234567890', 1500);
+  console.log('Original:', testText);
+  console.log('Updated:', result);
+  
+  // Check if replacement worked
+  const hasNewTotal = result.includes('Rs. 1500') || result.includes('₹1500');
+  console.log('Replacement successful:', hasNewTotal);
+  
+  // Restore original preview
+  document.getElementById('invoicePreview').textContent = originalPreview;
+  
+  return hasNewTotal;
+}
+
 /* === POP: Manual final amount flow === */
 let manualOverrideTotal = null;
 
@@ -992,19 +1053,6 @@ async function doAndroidPrintWithOverride(useTotal){
   }
 
   try {
-    // TRUE ASYNC: Fire-and-forget DB save
-    const toSave = {
-      ...lastPayload,
-      preview: false,
-      async: true,
-      override_grand_total: Math.round(finalOverride),   // integer rupees
-      charge_amount: Math.round(finalOverride),
-      redeem_points: Number(lpRedeem || 0)
-    };
-    if (window.__reservedInvoiceId) {
-      toSave.invoice_id = window.__reservedInvoiceId;
-    }
-
     // Generate invoice ID locally for immediate use
     const invoiceId = toSave.invoice_id || 'INV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     lastInvoiceId = invoiceId;
@@ -1014,8 +1062,8 @@ async function doAndroidPrintWithOverride(useTotal){
     const estEarn = lpEstimatedEarn(finalOverride);
     const smsText = buildSmsText(name, finalOverride, estEarn);
     
-    // Create invoice text from preview for immediate printing
-    const invoiceText = document.getElementById('invoicePreview').textContent || lastInvoiceText || '';
+    // Create updated invoice text with manual total for immediate printing
+    const invoiceText = generateUpdatedInvoiceText(name, phone, finalOverride);
     
     // Cache immediately for Android access
     const cacheData = {
@@ -1030,6 +1078,11 @@ async function doAndroidPrintWithOverride(useTotal){
 
     // Update UI immediately
     document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
+    
+    // Update the preview to show the manual total
+    const updatedInvoiceText = generateUpdatedInvoiceText(name, phone, finalOverride);
+    document.getElementById('invoicePreview').textContent = updatedInvoiceText;
+    lastInvoiceText = updatedInvoiceText;
     
     // Update loyalty state optimistically
     lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
