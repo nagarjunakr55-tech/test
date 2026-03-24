@@ -50,7 +50,7 @@ def india_date_str(dt=None, include_time: bool = True):
 def find_product_by_barcode(code: str):
     conn = get_connection()
     cur = conn.cursor()
-    ccur.execute("""
+    cur.execute("""
     SELECT brand, mrp, bought_price, selling_price, size, category
     FROM barcode_catalog
     WHERE barcode_data = %s
