@@ -241,8 +241,7 @@
 </div>
 
 <!-- Totals -->
-
-
+<div class="row" style="margin-top:10px; align-items:center; gap:10px;">
   <strong id="totalLbl">Total: ₹0.00</strong>
   <strong id="finalLbl">Final: ₹0.00</strong>
 
@@ -850,7 +849,7 @@ document.getElementById('lpRedeem').addEventListener('blur', (e) => {
 document.getElementById('lpRedeem').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
-    document.getElementById('lpApply').click();
+    document.getElementById('lpFetchApply').click();
   }
 });
 
@@ -1161,10 +1160,7 @@ async function doAndroidPrintWithOverride(useTotal){
     console.error('Checkout error', e);
     alert('Error preparing print. Please try again.');
   }
-
-
-
-
+}
 
 /* ==========================
    Clear
@@ -1172,7 +1168,6 @@ async function doAndroidPrintWithOverride(useTotal){
 document.getElementById('btnClear').addEventListener('click', () => {
 
   // reset pricing / discount state
-  appliedDiscount = "";
   lpRedeem = 0;
 
   // reset customer fields
@@ -1203,7 +1198,6 @@ document.getElementById('btnClear').addEventListener('click', () => {
   // clear persisted state
   try {
     localStorage.removeItem(KEY_CART);
-    localStorage.removeItem(KEY_DISC);
     localStorage.removeItem(KEY_NAME);
     localStorage.removeItem(KEY_PHONE);
     // Clear processed barcode to allow re-scanning after clear
