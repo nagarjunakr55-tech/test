@@ -634,6 +634,7 @@ def checkout_preview_logic(customer_name: str, phone: str, items: list,
         requested_redeem=int(redeem_points or 0)
     )
 
+    # Use effective_final (override amount) for invoice display in preview too
     invoice_text = generate_invoice_text(
         invoice_id="",
         customer_name=customer_name or "Guest",
@@ -641,7 +642,7 @@ def checkout_preview_logic(customer_name: str, phone: str, items: list,
         items=items_for_receipt,
         subtotal=totals["subtotal"],
         gst_amount=totals["gst"],
-        grand_total=final_after,
+        grand_total=effective_final,
         discount_amt=totals["discount_amt"],
         points_used=use_p,
         points_earned=earn_p,
@@ -701,6 +702,7 @@ def checkout_finalize_logic(
         requested_redeem=int(redeem_points or 0)
     )
 
+    # Use effective_final (override amount) for invoice display, not final_payable (after loyalty)
     invoice_text = generate_invoice_text(
         invoice_id=invoice_id,
         customer_name=customer_name or "Guest",
@@ -708,7 +710,7 @@ def checkout_finalize_logic(
         items=items_for_receipt,
         subtotal=totals["subtotal"],
         gst_amount=totals["gst"],
-        grand_total=final_payable,
+        grand_total=effective_final,
         discount_amt=totals["discount_amt"],
         points_used=used_pts,
         points_earned=earned_pts,
@@ -726,7 +728,7 @@ def checkout_finalize_logic(
                 subtotal=totals["subtotal"],
                 discount_amt=totals["discount_amt"],
                 gst_amt=totals["gst"],
-                grand_total=final_payable,
+                grand_total=effective_final,
                 invoice_text=invoice_text
             )
             from db import get_connection
