@@ -1056,69 +1056,61 @@ async function doAndroidPrintWithOverride(useTotal){
     const invoiceId = toSave.invoice_id || 'INV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     lastInvoiceId = invoiceId;
     
-    // Build SMS text and cache immediately (no waiting!)
+    // Build SMS text
     const base = window.location.origin;
     const estEarn = lpEstimatedEarn(finalOverride);
     const smsText = buildSmsText(name, finalOverride, estEarn);
     
-    // Create updated invoice text with manual total for immediate printing
-    const invoiceText = generateUpdatedInvoiceText(name, phone, finalOverride);
-    
-    // Cache immediately for Android access
-    const cacheData = {
-      invoice_id: invoiceId,
-      invoice_text: invoiceText,
-      phone: phone,
-      sms_text: smsText,
-      timestamp: Date.now()
-    };
-    localStorage.setItem(`invoice_cache_${invoiceId}`, JSON.stringify(cacheData));
-    console.log('[DRIP] Cached invoice data for immediate printing (async save)');
-
     // Update UI immediately
     document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
-    
-    // Update the preview to show the manual total
-    const updatedInvoiceText = generateUpdatedInvoiceText(name, phone, finalOverride);
-    document.getElementById('invoicePreview').textContent = updatedInvoiceText;
-    lastInvoiceText = updatedInvoiceText;
     
     // Update loyalty state optimistically
     lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
     lpRedeem = 0;
     lpRefreshUI();
 
-    // Start async DB save (fire-and-forget)
-    fetch('/api/checkout', {
+    // Wait for server to generate correct invoice text with override amount
+    const res = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(toSave),
       credentials: 'same-origin'
-    }).then(async res => {
-      const j = await res.json().catch(()=>null);
-      if (j && j.ok) {
-        console.log('[DRIP] Async save successful:', j.invoice_id);
-        // Update cache with server-confirmed invoice ID if different
-        if (j.invoice_id && j.invoice_id !== invoiceId) {
-          const updatedCache = {...cacheData, invoice_id: j.invoice_id};
-          localStorage.setItem(`invoice_cache_${j.invoice_id}`, JSON.stringify(updatedCache));
-          localStorage.removeItem(`invoice_cache_${invoiceId}`);
-        }
-        // Update remaining points if server provided
-        if (typeof j.remaining_points !== 'undefined') {
-          lpAvailable = Number(j.remaining_points || 0);
-          lpRefreshUI();
-        }
-      } else {
-        console.error('[DRIP] Async save failed:', j?.error);
-        // Handle save error - maybe show notification or retry logic
-      }
-    }).catch(err => {
-      console.error('[DRIP] Async save error:', err);
-      // Handle network error
     });
+    
+    const j = await res.json();
+    
+    if (!j || !j.ok) {
+      throw new Error(j?.error || 'Checkout failed');
+    }
+    
+    // Use server-generated invoice text (has correct override amount)
+    const invoiceText = j.invoice_text || '';
+    const actualInvoiceId = j.invoice_id || invoiceId;
+    lastInvoiceId = actualInvoiceId;
+    
+    console.log('[DRIP] Server save successful:', actualInvoiceId);
+    
+    // Update preview with server-generated text
+    document.getElementById('invoicePreview').textContent = invoiceText;
+    lastInvoiceText = invoiceText;
+    
+    // Cache for Android access
+    const cacheData = {
+      invoice_id: actualInvoiceId,
+      invoice_text: invoiceText,
+      phone: phone,
+      sms_text: smsText,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(`invoice_cache_${actualInvoiceId}`, JSON.stringify(cacheData));
+    
+    // Update remaining points if server provided
+    if (typeof j.points_balance !== 'undefined') {
+      lpAvailable = Number(j.points_balance || 0);
+      lpRefreshUI();
+    }
 
-    // IMMEDIATE PRINTING (no waiting for DB)
+    // PRINT with correct invoice text from server
     if (typeof AndroidNative !== 'undefined') {
       // Try instant printing first
       if (typeof AndroidNative.createAndPrint === 'function') {
@@ -1146,7 +1138,7 @@ async function doAndroidPrintWithOverride(useTotal){
     }
     
     // FALLBACK: Deep links for external browser
-    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(actualInvoiceId)}` +
                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
 
     try { window.location.href = deeplink; } catch (e) { /* ignore */ }
