@@ -166,7 +166,7 @@ def api_checkout():
         invoice_text = generate_invoice_text(
             invoice_id="", customer_name=cust_name, customer_phone=phone,
             items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-            grand_total=final_after, discount_amt=totals["discount_amt"],
+            grand_total=effective_final, discount_amt=totals["discount_amt"],
             points_used=use_p, points_earned=earn_p, points_balance=bal_p
         )
         return jsonify({
@@ -187,21 +187,21 @@ def api_checkout():
     if async_save:
         # Use preview simulation for immediate response (no DB wait)
         sim_use_p, sim_earn_p, sim_bal_p, sim_final_after = loyalty_simulate_preview(
-            phone=phone, grand_total=float(computed_grand_total), requested_redeem=redeem
+            phone=phone, grand_total=float(effective_final), requested_redeem=redeem
         )
         
         # Use preview values for immediate invoice generation
         used_pts = int(sim_use_p or 0)
         earned_pts = int(sim_earn_p or 0)
         new_balance = int(sim_bal_p or 0)
-        final_payable = int(round(float(sim_final_after or effective_final)))
+        final_payable = effective_final
         
         saved_amount = int(round(float(totals.get("subtotal", 0)))) - int(round(float(final_payable or 0)))
 
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
             items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-            grand_total=final_payable, discount_amt=totals["discount_amt"],
+            grand_total=effective_final, discount_amt=totals["discount_amt"],
             points_used=used_pts, points_earned=earned_pts, points_balance=new_balance,
             saved_amount=saved_amount
         )
@@ -233,7 +233,7 @@ def api_checkout():
                     subtotal=totals["subtotal"],
                     discount_amt=totals["discount_amt"],
                     gst_amt=totals["gst"],
-                    grand_total=actual_final,
+                    grand_total=effective_final,
                     invoice_text=invoice_text
                 )
                 # Update points info
@@ -266,9 +266,8 @@ def api_checkout():
 
     # SLOW PATH: Synchronous (when async_save is False)
     # 1) Determine allowed redeem (best-effort) using server-side simulation on a sensible base.
-    #    Use the canonical computed grand total for simulation so caps based on subtotal are accurate.
     sim_use_p, sim_earn_p, sim_bal_p, sim_final_after = loyalty_simulate_preview(
-        phone=phone, grand_total=float(computed_grand_total), requested_redeem=redeem
+        phone=phone, grand_total=float(effective_final), requested_redeem=redeem
     )
     applied_redeem = int(sim_use_p or 0)
 
@@ -292,7 +291,7 @@ def api_checkout():
     invoice_text = generate_invoice_text(
         invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
         items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-        grand_total=final_payable, discount_amt=totals["discount_amt"],
+        grand_total=effective_final, discount_amt=totals["discount_amt"],
         points_used=used_pts, points_earned=earned_pts, points_balance=new_balance,
         saved_amount=saved_amount
     )
@@ -314,7 +313,7 @@ def api_checkout():
                 subtotal=totals["subtotal"],
                 discount_amt=totals["discount_amt"],
                 gst_amt=totals["gst"],
-                grand_total=final_payable,
+                grand_total=effective_final,
                 invoice_text=invoice_text
             )
             # Update points info on sales_history row (background)
