@@ -20,6 +20,10 @@
            placeholder="10 digits" maxlength="10" autocomplete="tel" value="8106204688">
     <button type="button" class="clear-btn" id="clearPhone" style="display:none;">&times;</button>
   </div>
+  <button id="btnSendWA" type="button"
+        style="background:#25D366;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;white-space:nowrap;">
+    Send
+  </button>
 </div>
 
 <!-- Barcode (manual input only) -->
@@ -782,6 +786,23 @@ document.getElementById('clearPhone').addEventListener('click', () => {
 // Show/hide search buttons on page load
 toggleSearchButton('custName', 'searchName');
 toggleClearButton('custPhone', 'clearPhone');
+
+/* ==========================
+   Send WhatsApp Group Invite SMS
+   ========================== */
+document.getElementById('btnSendWA').addEventListener('click', () => {
+  const phone = (document.getElementById('custPhone').value || '').trim();
+  if (!/^\d{10}$/.test(phone)) {
+    alert('Enter a valid 10-digit phone number');
+    document.getElementById('custPhone').focus();
+    return;
+  }
+  if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.sendWhatsAppGroupSms === 'function') {
+    AndroidNative.sendWhatsAppGroupSms(phone);
+  } else {
+    alert('SMS sending is only available in the DRIP app');
+  }
+});
 
 /* Loyalty: Fetch/Apply button handler */
 document.getElementById('lpFetchApply').addEventListener('click', async () => {
