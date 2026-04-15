@@ -1050,21 +1050,45 @@ async function doAndroidPrintWithOverride(useTotal){
   if (!Number.isFinite(finalOverride) || finalOverride < 0) { alert('Invalid total'); return; }
 
   btn.disabled = true;
-  const oldTxt = btn.textContent;
-  btn.textContent = 'Saving…';
+  btn.textContent = 'Printing…';
 
   const name  = (document.getElementById('custName').value || 'Guest').trim() || 'Guest';
   const phone = (document.getElementById('custPhone').value || '').trim();
 
-  // Build payload: final save request
-  // - override_grand_total: server must treat this as the final charged amount (do not re-deduct loyalty)
-  // - charge_amount: explicit representation of final charge for clarity
-  // - redeem_points: the points we want the server to actually deduct & record
+  // Build SMS text and loyalty estimate immediately (no server needed)
+  const base = window.location.origin;
+  const estEarn = lpEstimatedEarn(finalOverride);
+  const smsText = buildSmsText(name, finalOverride, estEarn);
+
+  // Use already-available preview invoice text for immediate printing
+  const printText = lastInvoiceText || '';
+
+  // Update UI immediately
+  document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
+
+  // Update loyalty state optimistically
+  lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
+  lpRedeem = 0;
+  lpRefreshUI();
+
+  // PRINT IMMEDIATELY using preview text — no server wait
+  let printed = false;
+  if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.printReceiptDirect === 'function') {
+    try {
+      AndroidNative.printReceiptDirect(printText, phone || '', smsText || '');
+      printed = true;
+      console.log('[DRIP] Print triggered immediately (no server wait)');
+    } catch (e) {
+      console.error('[DRIP] Direct print failed', e);
+    }
+  }
+
+  // Build payload: final save request (fire to server in background)
   const toSave = {
     ...lastPayload,
     preview: false,
     async: true,
-    override_grand_total: Math.round(finalOverride),   // integer rupees
+    override_grand_total: Math.round(finalOverride),
     charge_amount: Math.round(finalOverride),
     redeem_points: Number(lpRedeem || 0)
   };
@@ -1072,107 +1096,56 @@ async function doAndroidPrintWithOverride(useTotal){
     toSave.invoice_id = window.__reservedInvoiceId;
   }
 
-  try {
-    // Generate invoice ID locally for immediate use
-    const invoiceId = toSave.invoice_id || 'INV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    lastInvoiceId = invoiceId;
-    
-    // Build SMS text
-    const base = window.location.origin;
-    const estEarn = lpEstimatedEarn(finalOverride);
-    const smsText = buildSmsText(name, finalOverride, estEarn);
-    
-    // Update UI immediately
-    document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
-    
-    // Update loyalty state optimistically
-    lpAvailable = Math.max(0, Number(lpAvailable || 0) - Number(lpRedeem || 0));
-    lpRedeem = 0;
-    lpRefreshUI();
-
-    // Wait for server to generate correct invoice text with override amount
-    const res = await fetch('/api/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(toSave),
-      credentials: 'same-origin'
-    });
-    
-    const j = await res.json();
-    
+  // Fire server save — don't block printing on this
+  fetch('/api/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(toSave),
+    credentials: 'same-origin'
+  })
+  .then(r => r.json())
+  .then(j => {
     if (!j || !j.ok) {
-      throw new Error(j?.error || 'Checkout failed');
+      console.error('[DRIP] Server save failed:', j?.error);
+      return;
     }
-    
-    // Use server-generated invoice text (has correct override amount)
-    const invoiceText = j.invoice_text || '';
-    const actualInvoiceId = j.invoice_id || invoiceId;
+    const invoiceText = j.invoice_text || printText;
+    const actualInvoiceId = j.invoice_id || '';
     lastInvoiceId = actualInvoiceId;
-    
+    lastInvoiceText = invoiceText;
+
     console.log('[DRIP] Server save successful:', actualInvoiceId);
-    
+
     // Update preview with server-generated text
     document.getElementById('invoicePreview').textContent = invoiceText;
-    lastInvoiceText = invoiceText;
-    
+
     // Cache for Android access
-    const cacheData = {
+    localStorage.setItem(`invoice_cache_${actualInvoiceId}`, JSON.stringify({
       invoice_id: actualInvoiceId,
       invoice_text: invoiceText,
       phone: phone,
       sms_text: smsText,
       timestamp: Date.now()
-    };
-    localStorage.setItem(`invoice_cache_${actualInvoiceId}`, JSON.stringify(cacheData));
-    
+    }));
+
     // Update remaining points if server provided
     if (typeof j.points_balance !== 'undefined') {
       lpAvailable = Number(j.points_balance || 0);
       lpRefreshUI();
     }
+  })
+  .catch(e => console.error('[DRIP] Server save error:', e));
 
-    // PRINT with correct invoice text from server
-    if (typeof AndroidNative !== 'undefined') {
-      // Try instant printing first
-      if (typeof AndroidNative.createAndPrint === 'function') {
-        try {
-          AndroidNative.createAndPrint(invoiceText || '', phone || '', smsText || '');
-          btn.textContent = 'Sent to printer (Instant)';
-          setPrintEnabled(true);
-          return;
-        } catch (e) {
-          console.error('Instant print failed, falling back to direct print', e);
-        }
-      }
-      
-      // Fallback to direct print
-      if (typeof AndroidNative.printReceiptDirect === 'function') {
-        try {
-          AndroidNative.printReceiptDirect(invoiceText || '', phone || '', smsText || '');
-          btn.textContent = 'Sent to printer';
-          setPrintEnabled(true);
-          return;
-        } catch (e) {
-          console.error('Direct print failed, falling back to deep link', e);
-        }
-      }
-    }
-    
-    // FALLBACK: Deep links for external browser
-    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(actualInvoiceId)}` +
+  // If AndroidNative wasn't available, fall back to deep link
+  if (!printed) {
+    const invoiceId = toSave.invoice_id || 'INV_' + Date.now();
+    const deeplink = `drip://receipt?base=${encodeURIComponent(base)}&code=${encodeURIComponent(invoiceId)}` +
                      `&sms_to=${encodeURIComponent(phone)}&sms_text=${encodeURIComponent(smsText)}`;
-
     try { window.location.href = deeplink; } catch (e) { /* ignore */ }
-
-    btn.textContent = 'Sent to printer';
-    setPrintEnabled(true);
-
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = oldTxt;
-    console.error('Checkout error', e);
-    alert('Error preparing print. Please try again.');
   }
+
+  btn.textContent = 'Sent to printer';
+  setPrintEnabled(true);
 }
 
 /* ==========================
@@ -1218,42 +1191,6 @@ document.getElementById('btnClear').addEventListener('click', () => {
   } catch {}
 });
 
-
-/* =========
-   API-based Instant Printing (Alternative Method)
-   ========= */
-async function handleInstantPrintViaAPI(invoiceId) {
-  try {
-    const response = await fetch('/api/invoice/instant-print', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        invoice_id: invoiceId
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.success && typeof AndroidNative !== 'undefined' && typeof AndroidNative.createAndPrint === 'function') {
-      // Use the new instant printing method with data from API
-      AndroidNative.createAndPrint(
-        data.receipt_text, 
-        data.sms_to, 
-        data.sms_text
-      );
-      console.log('[DRIP] API-based instant printing initiated');
-      return true;
-    } else {
-      console.error('[DRIP] API-based instant printing failed:', data.error || 'AndroidNative not available');
-      return false;
-    }
-  } catch (error) {
-    console.error('[DRIP] API print error:', error);
-    return false;
-  }
-}
 
 
 /* =========
