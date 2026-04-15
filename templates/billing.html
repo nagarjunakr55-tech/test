@@ -1060,8 +1060,23 @@ async function doAndroidPrintWithOverride(useTotal){
   const estEarn = lpEstimatedEarn(finalOverride);
   const smsText = buildSmsText(name, finalOverride, estEarn);
 
-  // Use already-available preview invoice text for immediate printing
-  const printText = lastInvoiceText || '';
+  // Patch preview invoice text: replace Total (and Saved) lines with override amount
+  const overrideAmt = Math.round(finalOverride);
+  let printText = (lastInvoiceText || '').replace(
+    /^(\s*Total\s+)\d+(\s*)$/m,
+    (match, prefix) => prefix + String(overrideAmt)
+  );
+  // Update "Saved" line if present: saved = subtotal - override
+  const savedAmt = Math.max(0, subtotal - overrideAmt);
+  if (savedAmt > 0) {
+    printText = printText.replace(
+      /^(\s*Saved\s+)\d+(\s*)$/m,
+      (match, prefix) => prefix + String(savedAmt)
+    );
+  } else {
+    // Remove Saved line if no savings
+    printText = printText.replace(/^\s*Saved\s+\d+\s*\n?/m, '');
+  }
 
   // Update UI immediately
   document.getElementById('finalLbl').textContent = 'Final: ₹' + Number(finalOverride).toFixed(2);
