@@ -166,7 +166,7 @@ def api_checkout():
         invoice_text = generate_invoice_text(
             invoice_id="", customer_name=cust_name, customer_phone=phone,
             items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-            grand_total=effective_final, discount_amt=totals["discount_amt"],
+            grand_total=final_after, discount_amt=totals["discount_amt"],
             points_used=use_p, points_earned=earn_p, points_balance=bal_p
         )
         return jsonify({
@@ -194,14 +194,14 @@ def api_checkout():
         used_pts = int(sim_use_p or 0)
         earned_pts = int(sim_earn_p or 0)
         new_balance = int(sim_bal_p or 0)
-        final_payable = effective_final
+        final_payable = sim_final_after
         
         saved_amount = int(round(float(totals.get("subtotal", 0)))) - int(round(float(final_payable or 0)))
 
         invoice_text = generate_invoice_text(
             invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
             items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-            grand_total=effective_final, discount_amt=totals["discount_amt"],
+            grand_total=final_payable, discount_amt=totals["discount_amt"],
             points_used=used_pts, points_earned=earned_pts, points_balance=new_balance,
             saved_amount=saved_amount
         )
@@ -291,7 +291,7 @@ def api_checkout():
     invoice_text = generate_invoice_text(
         invoice_id=invoice_id, customer_name=cust_name, customer_phone=phone,
         items=items_eff, subtotal=totals["subtotal"], gst_amount=totals["gst"],
-        grand_total=effective_final, discount_amt=totals["discount_amt"],
+        grand_total=final_payable, discount_amt=totals["discount_amt"],
         points_used=used_pts, points_earned=earned_pts, points_balance=new_balance,
         saved_amount=saved_amount
     )
