@@ -918,6 +918,13 @@ proceedBtn.addEventListener('click', async ()=>{
       lastInvoiceId = null;
       lastInvoiceText = j.invoice_text || '';
       document.getElementById('invoicePreview').textContent = lastInvoiceText;
+      
+      // Update loyalty balance from preview response
+      if (typeof j.points_balance !== 'undefined') {
+        lpAvailable = Number(j.points_balance || 0);
+        lpRefreshUI();
+      }
+      
       setPrintEnabled(true);
       proceedBtn.textContent = 'Ready to Print';
       proceedBtn.disabled = false;
