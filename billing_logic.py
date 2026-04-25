@@ -435,8 +435,8 @@ def generate_invoice_text(
     # Loyalty block: show Redeemed, Earned, Balance (if applicable)
     if (points_used or points_earned or points_balance is not None):
         if points_used and int(points_used) > 0:
-            # show redeemed in rupees (positive number), left label indicates it's redeem
-            lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{str(int(points_used)).rjust(COLS - LBL_W)}")
+            # show redeemed as negative value to indicate deduction
+            lines.append(f"{clamp('Redeemed (₹)', LBL_W)}{fmt_signed(-int(points_used)).rjust(COLS - LBL_W)}")
         if points_earned and int(points_earned) != 0:
             lines.append(f"{clamp('Earned (₹)', LBL_W)}{fmt_signed(int(points_earned), force_plus=True).rjust(COLS - LBL_W)}")
         if points_balance is not None:
