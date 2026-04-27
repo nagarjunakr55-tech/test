@@ -805,8 +805,11 @@ document.getElementById('btnSendWA').addEventListener('click', () => {
     // Open WhatsApp Business with simple message
     setTimeout(() => {
       const message = "Hi customer,\n\nPlease join WhatsApp group: https://chat.whatsapp.com/DhI9NDTeQm6CFOaTRwYwma";
-      const whatsappUrl = `whatsapp://send?phone=91${phone}&text=${encodeURIComponent(message)}`;
-      window.location.href = whatsappUrl;
+      const phoneNumber = `91${phone}`;
+      const encodedMessage = encodeURIComponent(message);
+      
+      // Open WhatsApp Web directly
+      window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
     }, 1000);
   } else {
     alert('SMS sending is only available in the DRIP app');
