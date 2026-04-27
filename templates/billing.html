@@ -808,7 +808,7 @@ document.getElementById('btnSendWA').addEventListener('click', () => {
       const phoneNumber = `91${phone}`;
       const encodedMessage = encodeURIComponent(message);
       
-      window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+      window.location.href = `https://web.whatsapp.com/send?phone=${phoneNumber}&text=${encodedMessage}`;
     }, 1000);
   } else {
     alert('SMS sending is only available in the DRIP app');
