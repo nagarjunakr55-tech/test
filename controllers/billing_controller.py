@@ -212,19 +212,13 @@ def api_checkout():
         except Exception:
             pass
 
-        # Background: Do loyalty_finalize AND save_to_db together
+        # Background: Do loyalty_finalize AND save_to_db separately
+        # so a loyalty failure does not block order persistence
         def _persist_with_loyalty():
+            import logging
+
+            # Step 1: Always persist the invoice first
             try:
-                # Actually finalize loyalty points (DB write)
-                finalize_grand_total = float(effective_final)
-                if used_pts > 0:
-                    finalize_grand_total = float(effective_final + used_pts)
-                
-                actual_used, actual_earned, actual_balance, actual_final = loyalty_finalize(
-                    phone=phone, grand_total=float(finalize_grand_total), requested_redeem=used_pts
-                )
-                
-                # Persist invoice
                 save_to_db(
                     invoice_id=invoice_id,
                     name=cust_name,
@@ -236,7 +230,25 @@ def api_checkout():
                     grand_total=effective_final,
                     invoice_text=invoice_text
                 )
-                # Update points info
+            except Exception as e:
+                logging.error(f"Background save_to_db failed for {invoice_id}: {e}")
+                return  # nothing more we can do
+
+            # Step 2: Finalize loyalty (best-effort; order is already saved)
+            actual_earned, actual_used = 0, 0
+            try:
+                finalize_grand_total = float(effective_final)
+                if used_pts > 0:
+                    finalize_grand_total = float(effective_final + used_pts)
+
+                actual_used, actual_earned, actual_balance, actual_final = loyalty_finalize(
+                    phone=phone, grand_total=float(finalize_grand_total), requested_redeem=used_pts
+                )
+            except Exception as e:
+                logging.error(f"Background loyalty_finalize failed for {invoice_id}: {e}")
+
+            # Step 3: Update points columns (best-effort)
+            try:
                 with get_connection() as conn2, conn2.cursor() as cur2:
                     cur2.execute("""
                         UPDATE public.sales_history
@@ -247,8 +259,7 @@ def api_checkout():
                     """, (actual_earned, actual_used, invoice_id))
                     conn2.commit()
             except Exception as e:
-                import logging
-                logging.error(f"Background persist failed for {invoice_id}: {e}")
+                logging.error(f"Background points update failed for {invoice_id}: {e}")
 
         Thread(target=_persist_with_loyalty, daemon=True).start()
 
@@ -303,20 +314,20 @@ def api_checkout():
         pass
 
     def _persist():
+        # Persist invoice — let exceptions propagate so caller can return 500
+        save_to_db(
+            invoice_id=invoice_id,
+            name=cust_name,
+            phone=phone,
+            items=items_eff,
+            subtotal=totals["subtotal"],
+            discount_amt=totals["discount_amt"],
+            gst_amt=totals["gst"],
+            grand_total=effective_final,
+            invoice_text=invoice_text
+        )
+        # Update points info on sales_history row (best-effort)
         try:
-            # Persist invoice and reporting fields
-            save_to_db(
-                invoice_id=invoice_id,
-                name=cust_name,
-                phone=phone,
-                items=items_eff,
-                subtotal=totals["subtotal"],
-                discount_amt=totals["discount_amt"],
-                gst_amt=totals["gst"],
-                grand_total=effective_final,
-                invoice_text=invoice_text
-            )
-            # Update points info on sales_history row (background)
             with get_connection() as conn2, conn2.cursor() as cur2:
                 cur2.execute("""
                     UPDATE public.sales_history
@@ -327,7 +338,6 @@ def api_checkout():
                 """, (earned_pts, used_pts, invoice_id))
                 conn2.commit()
         except Exception:
-            # swallow in background
             pass
 
     try:

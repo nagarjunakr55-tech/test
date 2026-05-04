@@ -719,6 +719,7 @@ def checkout_finalize_logic(
     )
 
     def _persist():
+        # Save order — propagate failures when synchronous
         try:
             save_to_db(
                 invoice_id=invoice_id,
@@ -731,6 +732,12 @@ def checkout_finalize_logic(
                 grand_total=effective_final,
                 invoice_text=invoice_text
             )
+        except Exception:
+            if not async_save:
+                raise
+            return  # async: nothing more we can do
+        # Update points (best-effort)
+        try:
             from db import get_connection
             with get_connection() as conn2, conn2.cursor() as cur2:
                 cur2.execute("""
@@ -742,8 +749,7 @@ def checkout_finalize_logic(
                 """, (earned_pts, used_pts, invoice_id))
                 conn2.commit()
         except Exception:
-            if not async_save:
-                raise
+            pass
 
     if async_save:
         from threading import Thread
