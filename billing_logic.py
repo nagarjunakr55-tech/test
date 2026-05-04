@@ -496,7 +496,8 @@ def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, 
         qty  = int(it.get("qty") or 0)
         if code and qty > 0:
             cur.execute(
-                "INSERT INTO sales_barcodes (invoice_id, code, qty) VALUES (%s, %s, %s)",
+                "INSERT INTO sales_barcodes (invoice_id, code, qty) VALUES (%s, %s, %s)"
+                " ON CONFLICT (invoice_id, code) DO NOTHING",
                 (invoice_id, code, qty)
             )
 
