@@ -853,7 +853,8 @@ document.getElementById('sendOptionsCancel').addEventListener('click', () => {
 // Send button handler
 document.getElementById('sendOptionsOk').addEventListener('click', () => {
   const phone = (document.getElementById('custPhone').value || '').trim();
-  const selectedMethod = document.querySelector('input[name="sendMethod"]:checked').value;
+  const selectedRadio = document.querySelector('input[name="sendMethod"]:checked');
+  const selectedMethod = selectedRadio ? selectedRadio.value : 'both';
   
   // Close modal
   document.getElementById('sendOptionsModal').style.display = 'none';
@@ -863,22 +864,29 @@ document.getElementById('sendOptionsOk').addEventListener('click', () => {
   const encodedMessage = encodeURIComponent(message);
   
   // Send based on selected method
-  if (selectedMethod === 'sms' || selectedMethod === 'both') {
-    // Send SMS via Android app
+  if (selectedMethod === 'sms') {
+    // Send SMS only
     if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.sendWhatsAppGroupSms === 'function') {
       AndroidNative.sendWhatsAppGroupSms(phone);
     } else {
       alert('SMS sending is only available in the DRIP app');
       return;
     }
-  }
-  
-  if (selectedMethod === 'whatsapp' || selectedMethod === 'both') {
-    // Open WhatsApp with delay if both are selected
-    const delay = selectedMethod === 'both' ? 1000 : 0;
-    setTimeout(() => {
-      window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
-    }, delay);
+  } else if (selectedMethod === 'whatsapp') {
+    // Send WhatsApp only
+    window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+  } else if (selectedMethod === 'both') {
+    // Send both SMS and WhatsApp
+    if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.sendWhatsAppGroupSms === 'function') {
+      AndroidNative.sendWhatsAppGroupSms(phone);
+      // Open WhatsApp after 1 second delay
+      setTimeout(() => {
+        window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+      }, 1000);
+    } else {
+      alert('SMS sending is only available in the DRIP app');
+      return;
+    }
   }
 });
 
