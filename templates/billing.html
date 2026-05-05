@@ -29,8 +29,10 @@
 <!-- Barcode (manual input only) -->
 <div class="row" style="margin-top:10px;">
   <label for="barcode" class="nowrap">Barcode</label>
-  <input id="barcode" class="grow" type="text" 
+  <input id="barcode" type="text" 
        placeholder="Enter Barcode" 
+       maxlength="20"
+       style="width:20ch;"
        autocomplete="off">
 
   <button id="btnBarcode"
@@ -299,6 +301,48 @@
         type="button" 
         style="background:#4caf50;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">
         Print
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- Send Options Modal -->
+<div id="sendOptionsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2001;">
+  <div style="background:#fff; margin:20vh auto; padding:16px; width:300px; box-shadow:0 10px 30px rgba(0,0,0,.25); border-radius:8px;">
+    
+    <h4 style="margin-top:0;">Send Message</h4>
+    <p style="margin:8px 0; color:#666; font-size:14px;">Choose how to send the WhatsApp group invite:</p>
+
+    <div style="margin:12px 0;">
+      <label style="display:block; margin:8px 0; cursor:pointer;">
+        <input type="radio" name="sendMethod" value="sms" style="margin-right:8px;">
+        Send SMS only
+      </label>
+      <label style="display:block; margin:8px 0; cursor:pointer;">
+        <input type="radio" name="sendMethod" value="whatsapp" style="margin-right:8px;">
+        Send WhatsApp only
+      </label>
+      <label style="display:block; margin:8px 0; cursor:pointer;">
+        <input type="radio" name="sendMethod" value="both" checked style="margin-right:8px;">
+        Send both SMS and WhatsApp
+      </label>
+    </div>
+
+    <div class="row" style="margin-top:16px; justify-content:flex-end; gap:8px;">
+      
+      <button 
+        id="sendOptionsCancel" 
+        type="button"
+        style="background:#f44336;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">
+        Cancel
+      </button>
+
+      <button 
+        id="sendOptionsOk" 
+        type="button" 
+        style="background:#4caf50;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">
+        Send
       </button>
 
     </div>
@@ -787,7 +831,7 @@ toggleSearchButton('custName', 'searchName');
 toggleClearButton('custPhone', 'clearPhone');
 
 /* ==========================
-   Send WhatsApp Group Invite SMS + Open WhatsApp
+   Send Options Modal Handlers
    ========================== */
 document.getElementById('btnSendWA').addEventListener('click', () => {
   const phone = (document.getElementById('custPhone').value || '').trim();
@@ -798,20 +842,44 @@ document.getElementById('btnSendWA').addEventListener('click', () => {
     return;
   }
   
-  // Send SMS via Android app (existing functionality)
-  if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.sendWhatsAppGroupSms === 'function') {
-    AndroidNative.sendWhatsAppGroupSms(phone);
-    
-    // Open WhatsApp Business with simple message
+  // Show the send options modal
+  document.getElementById('sendOptionsModal').style.display = 'block';
+});
+
+// Cancel button handler
+document.getElementById('sendOptionsCancel').addEventListener('click', () => {
+  document.getElementById('sendOptionsModal').style.display = 'none';
+});
+
+// Send button handler
+document.getElementById('sendOptionsOk').addEventListener('click', () => {
+  const phone = (document.getElementById('custPhone').value || '').trim();
+  const selectedMethod = document.querySelector('input[name="sendMethod"]:checked').value;
+  
+  // Close modal
+  document.getElementById('sendOptionsModal').style.display = 'none';
+  
+  const message = "Hi customer,\n\nPlease join WhatsApp group: https://chat.whatsapp.com/DhI9NDTeQm6CFOaTRwYwma";
+  const phoneNumber = `91${phone}`;
+  const encodedMessage = encodeURIComponent(message);
+  
+  // Send based on selected method
+  if (selectedMethod === 'sms' || selectedMethod === 'both') {
+    // Send SMS via Android app
+    if (typeof AndroidNative !== 'undefined' && typeof AndroidNative.sendWhatsAppGroupSms === 'function') {
+      AndroidNative.sendWhatsAppGroupSms(phone);
+    } else {
+      alert('SMS sending is only available in the DRIP app');
+      return;
+    }
+  }
+  
+  if (selectedMethod === 'whatsapp' || selectedMethod === 'both') {
+    // Open WhatsApp with delay if both are selected
+    const delay = selectedMethod === 'both' ? 1000 : 0;
     setTimeout(() => {
-      const message = "Hi customer,\n\nPlease join WhatsApp group: https://chat.whatsapp.com/DhI9NDTeQm6CFOaTRwYwma";
-      const phoneNumber = `91${phone}`;
-      const encodedMessage = encodeURIComponent(message);
-      
       window.location.href = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
-    }, 1000);
-  } else {
-    alert('SMS sending is only available in the DRIP app');
+    }, delay);
   }
 });
 
