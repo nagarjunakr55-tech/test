@@ -420,8 +420,48 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
   });
 
   // Hook up print buttons (keep at end)
-  document.getElementById("btnMobile").addEventListener("click", () => postQuickPrint("mobile"));
-  document.getElementById("btnPc").addEventListener("click", () => postQuickPrint("pc"));
+  document.getElementById("btnMobile").addEventListener("click", async () => {
+    const saveOnlyCheckbox = document.getElementById("saveOnly");
+    
+    // If saveOnly checkbox is checked, save without printing
+    if (saveOnlyCheckbox && saveOnlyCheckbox.checked) {
+      const payload = {
+        brand: document.getElementById("brand").value.trim(),
+        mrp: document.getElementById("mrp").value.trim(),
+        bought: document.getElementById("bought").value.trim(),
+        sp: document.getElementById("sp").value.trim(),
+        size: document.getElementById("size").value.trim(),
+        category: document.getElementById("category").value.trim()
+      };
+
+      if (!payload.brand || !payload.size || !payload.category) {
+        alert("Please fill Brand, Size and Category.");
+        return;
+      }
+
+      try {
+        const resp = await fetch(URL_BARCODES_CREATE, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || !data?.ok) {
+          alert(data?.error || "Failed to save barcode");
+          return;
+        }
+
+        alert("Barcode saved to database (no print).");
+        window.location.reload();
+      } catch (e) {
+        alert("Network error: " + e);
+      }
+    } else {
+      // Normal print flow
+      postQuickPrint("mobile");
+    }
+  });
 
   // Initial focus
   if (!document.getElementById("brand").value) {
