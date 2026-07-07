@@ -67,7 +67,8 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
     <input id="bought" name="bought" placeholder="Bought"
            type="text" inputmode="decimal" pattern="[0-9]*"
            value="{{ bought_val or '' }}"
-           tabindex="3" enterkeyhint="next" autocomplete="off" />
+           tabindex="3" enterkeyhint="next" autocomplete="off" 
+           {% if not is_admin %}style="display:none;"{% endif %} />
 
     <input id="sp" name="sp" placeholder="SP Price"
            type="text" inputmode="decimal" pattern="[0-9]*"
@@ -124,7 +125,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
         <th>Action</th>
         <th>Brand</th>
         <th>MRP</th>
-        <th>Bought</th>
+        <th{% if not is_admin %} style="display:none;"{% endif %}>Bought</th>
         <th>SP</th>
         <th>Size</th>
         <th>Category</th>
@@ -149,7 +150,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
         <!-- Data columns -->
         <td>{{ r[0] }}</td>
         <td>{{ (r[1] or 0)|int if r[1] is not none else '' }}</td>
-        <td>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
+        <td{% if not is_admin %} style="display:none;"{% endif %}>{{ (r[2] or 0)|int if r[2] is not none else '' }}</td>
         <td>{{ (r[3] or 0)|int if r[3] is not none else '' }}</td>
         <td>{{ r[4] }}</td>
         <td>{{ r[5] }}</td>

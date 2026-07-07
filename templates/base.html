@@ -180,8 +180,8 @@ button:hover, .btn:hover{ filter: brightness(.95); }
 <!-- <a href="{{ url_for('home') }}">Home</a> -->
 <a href="/inventory" class="inventory">Inventory</a>
 
+<a href="{{ url_for('labels.page') }}" class="barcodes">Barcodes</a>
 {% if is_admin %}
-  <a href="{{ url_for('labels.page') }}" class="barcodes">Barcodes</a>
   <a href="{{ url_for('reports.profit') }}" class="reports">Reports</a>
 {% endif %}
 
