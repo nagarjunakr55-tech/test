@@ -96,7 +96,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
   </div>
 
   <!-- NEW: Unique barcode + Save (no print) -->
-  <div class="form-row" style="display:flex; align-items:center; gap:6px; max-width:720px;">
+  <div class="form-row" style="display:flex; align-items:center; gap:6px; max-width:720px;"{% if not is_admin %} style="display:none;"{% endif %}>
   <input id="uniqueCode"
          
          autocomplete="off"
@@ -110,9 +110,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
 
 
   <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="btn" type="button" id="btnMobile">Print on Mobile</button>
-    <button class="btn" type="button" id="btnPc">Print on PC</button>
-    <a class="btn" href="{{ url_for('billing.billing') }}">Back</a>
+    <button class="btn" type="button" id="btnMobile">Print</button>
   </div>
 </form>
 
