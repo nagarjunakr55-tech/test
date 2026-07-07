@@ -425,13 +425,21 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
     
     // If saveOnly checkbox is checked, save without printing
     if (saveOnlyCheckbox && saveOnlyCheckbox.checked) {
+      // Generate a random 6-character code
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let code = "";
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
       const payload = {
         brand: document.getElementById("brand").value.trim(),
         mrp: document.getElementById("mrp").value.trim(),
         bought: document.getElementById("bought").value.trim(),
         sp: document.getElementById("sp").value.trim(),
         size: document.getElementById("size").value.trim(),
-        category: document.getElementById("category").value.trim()
+        category: document.getElementById("category").value.trim(),
+        code: code
       };
 
       if (!payload.brand || !payload.size || !payload.category) {
@@ -446,13 +454,16 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
           body: JSON.stringify(payload)
         });
 
-        const data = await resp.json();
+        const text = await resp.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) {}
+
         if (!resp.ok || !data?.ok) {
-          alert(data?.error || "Failed to save barcode");
+          alert(data?.error || text.slice(0, 500));
           return;
         }
 
-        alert("Barcode saved to database (no print).");
+        alert("Barcode saved to database (no print). Code: " + code);
         window.location.reload();
       } catch (e) {
         alert("Network error: " + e);
