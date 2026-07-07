@@ -157,7 +157,7 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
         </td>
 
         <!-- Save (before Delete) -->
-        <td style="display:flex; gap:6px; align-items:center;"{% if not is_admin %} style="display:none;"{% endif %}>
+        <td{% if not is_admin %} style="display:none;"{% else %} style="display:flex; gap:6px; align-items:center;"{% endif %}>
           <input type="number" min="1" value="1" class="rowCopies"
                  style="width:64px; padding:6px; font-size:13px; border-radius:6px; border:1px solid #ddd;" />
 
