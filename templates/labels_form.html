@@ -95,19 +95,14 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
            type="number" inputmode="numeric" tabindex="7" enterkeyhint="done" style="width:120px;" />
   </div>
 
-  <!-- NEW: Unique barcode + Save (no print) -->
-  <div class="form-row" style="display:flex; align-items:center; gap:6px; max-width:720px;"{% if not is_admin %} style="display:none;"{% endif %}>
-  <input id="uniqueCode"
-         
-         autocomplete="off"
-         inputmode="latin"
-         pattern="[A-Za-z0-9_-]{6}"
-         minlength="6" maxlength="6" size="6"
-         style="width:8ch; padding:8px 10px; text-transform:uppercase; letter-spacing:1px; text-align:center;">
-  <button class="btn" type="button" id="btnSaveOnly" disabled>Save</button>
-  <span id="uniqueHint" style="font-size:14px;"></span>
-</div>
-
+  {% if is_admin %}
+  <div class="form-row" style="display:flex; align-items:center; gap:12px; max-width:420px;">
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+      <input type="checkbox" id="saveOnly" style="width:18px; height:18px; cursor:pointer;">
+      <span>Save only (no print)</span>
+    </label>
+  </div>
+  {% endif %}
 
   <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
     <button class="btn" type="button" id="btnMobile">Print</button>
