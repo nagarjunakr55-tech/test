@@ -259,8 +259,10 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
 
   // ----- Print helpers -----
   function disableButtons(disabled) {
-    document.getElementById("btnMobile").disabled = disabled;
-    document.getElementById("btnPc").disabled = disabled;
+    const m = document.getElementById("btnMobile");
+    const p = document.getElementById("btnPc");
+    if (m) m.disabled = disabled;
+    if (p) p.disabled = disabled;
   }
 
   async function postQuickPrint(action) {
@@ -330,94 +332,96 @@ table.barcode-list .btn { background:#10b981; color:#fff; } /* emerald */
     return (s || "").toUpperCase().replace(/[^A-Z0-9\-_]/g, "").slice(0, 40);
   }
 
-  async function checkCode(code){
-    if (!code) {
-      codeOK = false;
-      uniqueHint.textContent = "";
-      btnSaveOnly.disabled = true;
-      return;
-    }
-    uniqueHint.textContent = "Checking...";
-    uniqueHint.style.color = "";
-    btnSaveOnly.disabled = true;
-    try {
-      const existsUrl = URL_BARCODES_EXISTS_TMPL.replace("__CODE__", encodeURIComponent(code));
-      const r = await fetch(existsUrl);
-      const j = await r.json();
-      if (!j.ok) throw new Error("bad response");
-      if (j.exists) {
+  if (uniqueCode && uniqueHint && btnSaveOnly) {
+    async function checkCode(code){
+      if (!code) {
         codeOK = false;
-        uniqueHint.textContent = "Already exists";
-        uniqueHint.style.color = "#d32f2f";
-      } else {
-        codeOK = true;
-        uniqueHint.textContent = "Available";
-        uniqueHint.style.color = "#2e7d32";
-        btnSaveOnly.disabled = false;
+        uniqueHint.textContent = "";
+        btnSaveOnly.disabled = true;
+        return;
       }
-    } catch {
-      codeOK = false;
-      uniqueHint.textContent = "Error";
-      uniqueHint.style.color = "#d32f2f";
-    }
-  }
-
-  uniqueCode.addEventListener("input", () => {
-    const v = normCode(uniqueCode.value);
-    if (uniqueCode.value !== v) uniqueCode.value = v;
-
-    codeOK = false;
-    btnSaveOnly.disabled = true;
-    uniqueHint.textContent = v ? "Checking..." : "";
-    uniqueHint.style.color = "";
-
-    clearTimeout(codeTimer);
-    if (v) codeTimer = setTimeout(() => checkCode(v), 300);
-  });
-
-  btnSaveOnly.addEventListener("click", async () => {
-    if (!codeOK) return;
-
-    const payload = {
-      brand:     document.getElementById("brand").value.trim(),
-      mrp:       document.getElementById("mrp").value.trim(),
-      bought:    document.getElementById("bought").value.trim(),
-      sp:        document.getElementById("sp").value.trim(),
-      size:      document.getElementById("size").value.trim(),
-      category:  document.getElementById("category").value.trim(),
-      code:      uniqueCode.value.trim()
-    };
-
-    if (!payload.brand || !payload.size || !payload.category) {
-      alert("Please fill Brand, Size, and Category.");
-      return;
-    }
-
-    try {
+      uniqueHint.textContent = "Checking...";
+      uniqueHint.style.color = "";
       btnSaveOnly.disabled = true;
-      const resp = await fetch(URL_BARCODES_CREATE, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload)
-      });
+      try {
+        const existsUrl = URL_BARCODES_EXISTS_TMPL.replace("__CODE__", encodeURIComponent(code));
+        const r = await fetch(existsUrl);
+        const j = await r.json();
+        if (!j.ok) throw new Error("bad response");
+        if (j.exists) {
+          codeOK = false;
+          uniqueHint.textContent = "Already exists";
+          uniqueHint.style.color = "#d32f2f";
+        } else {
+          codeOK = true;
+          uniqueHint.textContent = "Available";
+          uniqueHint.style.color = "#2e7d32";
+          btnSaveOnly.disabled = false;
+        }
+      } catch {
+        codeOK = false;
+        uniqueHint.textContent = "Error";
+        uniqueHint.style.color = "#d32f2f";
+      }
+    }
 
-      const text = await resp.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch (_) {}
+    uniqueCode.addEventListener("input", () => {
+      const v = normCode(uniqueCode.value);
+      if (uniqueCode.value !== v) uniqueCode.value = v;
 
-      if (!resp.ok || !data?.ok) {
-        alert(data?.error || text.slice(0, 500));
-        btnSaveOnly.disabled = !codeOK; // re-enable if still valid
+      codeOK = false;
+      btnSaveOnly.disabled = true;
+      uniqueHint.textContent = v ? "Checking..." : "";
+      uniqueHint.style.color = "";
+
+      clearTimeout(codeTimer);
+      if (v) codeTimer = setTimeout(() => checkCode(v), 300);
+    });
+
+    btnSaveOnly.addEventListener("click", async () => {
+      if (!codeOK) return;
+
+      const payload = {
+        brand:     document.getElementById("brand").value.trim(),
+        mrp:       document.getElementById("mrp").value.trim(),
+        bought:    document.getElementById("bought").value.trim(),
+        sp:        document.getElementById("sp").value.trim(),
+        size:      document.getElementById("size").value.trim(),
+        category:  document.getElementById("category").value.trim(),
+        code:      uniqueCode.value.trim()
+      };
+
+      if (!payload.brand || !payload.size || !payload.category) {
+        alert("Please fill Brand, Size, and Category.");
         return;
       }
 
-      alert("Saved to barcode catalog.");
-      window.location.reload(); // show in Recent Barcodes
-    } catch (e) {
-      alert("Network error: " + e);
-      btnSaveOnly.disabled = !codeOK;
-    }
-  });
+      try {
+        btnSaveOnly.disabled = true;
+        const resp = await fetch(URL_BARCODES_CREATE, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload)
+        });
+
+        const text = await resp.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) {}
+
+        if (!resp.ok || !data?.ok) {
+          alert(data?.error || text.slice(0, 500));
+          btnSaveOnly.disabled = !codeOK; // re-enable if still valid
+          return;
+        }
+
+        alert("Saved to barcode catalog.");
+        window.location.reload(); // show in Recent Barcodes
+      } catch (e) {
+        alert("Network error: " + e);
+        btnSaveOnly.disabled = !codeOK;
+      }
+    });
+  }
 
   // Hook up print buttons (keep at end)
   document.getElementById("btnMobile").addEventListener("click", async () => {
