@@ -602,7 +602,7 @@ function renderCart() {
     // Show bought price in toggle column if active, otherwise show button
     const showBought = it.show_bought_price === true;
     const toggleContent = showBought 
-      ? `<span class="orig-muted">${boughtPrice}</span>`
+      ? `<button type="button" class="orig-price-toggle" data-act="toggle-bought" data-i="${idx}">${boughtPrice}</button>`
       : `<button type="button" class="orig-price-toggle" data-act="toggle-bought" data-i="${idx}">1</button>`;
 
     const tr = document.createElement('tr');
