@@ -153,23 +153,53 @@ def create_app() -> Flask:
             return False
         return True
 
+    def is_reports_only() -> bool:
+        """Return True if the session has reports-only access and within 1 minute.
+        If expired, clear the reports-only flags from session and return False.
+        """
+        if session.get("is_reports_only") is not True:
+            return False
+        ts = session.get("is_reports_only_at")
+        if not ts:
+            # no timestamp -> be defensive and revoke reports-only access
+            session.pop("is_reports_only", None)
+            session.pop("is_reports_only_at", None)
+            return False
+        # expire after 1 minute (60 seconds)
+        if (time.time() - float(ts)) > 60:
+            session.pop("is_reports_only", None)
+            session.pop("is_reports_only_at", None)
+            return False
+        return True
+
+    def can_view_reports() -> bool:
+        """Return True if user has either full admin or reports-only access."""
+        return is_admin() or is_reports_only()
+
     def require_admin():
         if not is_admin():
             abort(403, "Admin only")
 
     @app.context_processor
     def inject_admin():
-        return {"is_admin": is_admin()}
+        return {"is_admin": is_admin(), "can_view_reports": can_view_reports()}
 
     @app.post("/admin/login")
     def admin_login():
         pin = (request.form.get("pin") or "").strip()
-        expected = os.getenv("ADMIN_PIN", "5175")
+        full_admin_pin = os.getenv("ADMIN_PIN", "5175")
+        reports_only_pin = "2334"
         nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
-        if pin == expected:
+        
+        if pin == full_admin_pin:
             session["is_admin"] = True
             # record when admin privilege was granted
             session["is_admin_at"] = time.time()
+            return redirect(nxt)
+        elif pin == reports_only_pin:
+            session["is_reports_only"] = True
+            # record when reports-only privilege was granted
+            session["is_reports_only_at"] = time.time()
             return redirect(nxt)
         u = urlparse(nxt)
         q = dict(parse_qsl(u.query, keep_blank_values=True))
@@ -182,6 +212,9 @@ def create_app() -> Flask:
         # clear admin flag and timestamp
         session.pop("is_admin", None)
         session.pop("is_admin_at", None)
+        # also clear reports-only flags
+        session.pop("is_reports_only", None)
+        session.pop("is_reports_only_at", None)
         nxt = request.form.get("next") or request.referrer or url_for("billing.billing")
         return redirect(nxt)
 
