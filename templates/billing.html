@@ -27,13 +27,22 @@
 </div>
 
 <!-- Barcode (manual input only) -->
-<div class="row" style="margin-top:10px;">
+<div class="row" style="margin-top:10px; position:relative;">
   <label for="barcode" class="nowrap">Barcode</label>
-  <input id="barcode" type="text" 
-       placeholder="Enter Barcode" 
-       maxlength="20"
-       style="width:20ch;"
-       autocomplete="off">
+  <div style="position:relative; flex:1;">
+    <input id="barcode" type="text" 
+         placeholder="Search barcode, brand, or category" 
+         maxlength="20"
+         style="width:100%;"
+         autocomplete="off">
+
+    <!-- Barcode search results dropdown -->
+    <div id="barcodeSearchResults" 
+         style="display:none; position:absolute; top:100%; left:0; right:0; 
+                background:#fff; border:1px solid #ddd; border-radius:6px; 
+                max-height:300px; overflow-y:auto; z-index:1000; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+    </div>
+  </div>
 
   <button id="btnBarcode"
         style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
@@ -74,6 +83,112 @@
 
   /* Min profit floor used by the Floor button */
   const MIN_PROFIT = 100;
+
+  /* Barcode search functionality */
+  let barcodeSearchTimeout = null;
+  const barcodeInput = document.getElementById('barcode');
+  const barcodeResults = document.getElementById('barcodeSearchResults');
+
+  barcodeInput.addEventListener('input', async (e) => {
+    const query = e.target.value.trim();
+    
+    // Clear previous timeout
+    if (barcodeSearchTimeout) {
+      clearTimeout(barcodeSearchTimeout);
+    }
+    
+    // Hide results if query is too short
+    if (query.length < 2) {
+      barcodeResults.style.display = 'none';
+      barcodeResults.innerHTML = '';
+      return;
+    }
+    
+    // Debounce search
+    barcodeSearchTimeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`{{ url_for('billing.api_barcode_search') }}?q=${encodeURIComponent(query)}&limit=20`);
+        const j = await res.json();
+        
+        if (j.ok && j.results && j.results.length > 0) {
+          // Render results
+          barcodeResults.innerHTML = j.results.map(item => `
+            <div class="barcode-result-item" 
+                 data-code="${item.code}" 
+                 data-brand="${item.brand}" 
+                 data-category="${item.category}" 
+                 data-size="${item.size}" 
+                 data-mrp="${item.mrp_price}" 
+                 data-bought="${item.bought_price}" 
+                 data-price="${item.price}"
+                 style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center;">
+              <div style="flex:1;">
+                <div style="font-weight:600; color:#333;">${item.brand}</div>
+                <div style="font-size:13px; color:#666;">${item.category} | ${item.size}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:13px; color:#666; font-family:monospace;">${item.code}</div>
+                <div style="font-size:13px; color:#2e7d32; font-weight:600;">₹${item.price}</div>
+              </div>
+            </div>
+          `).join('');
+          
+          barcodeResults.style.display = 'block';
+          
+          // Add click handlers
+          document.querySelectorAll('.barcode-result-item').forEach(item => {
+            item.addEventListener('click', () => {
+              const code = item.getAttribute('data-code');
+              const brand = item.getAttribute('data-brand');
+              const category = item.getAttribute('data-category');
+              const size = item.getAttribute('data-size');
+              const mrp = item.getAttribute('data-mrp');
+              const bought = item.getAttribute('data-bought');
+              const price = item.getAttribute('data-price');
+              
+              // Add to cart
+              upsertCartItem({
+                code: code,
+                brand: brand,
+                category: category,
+                size: size,
+                qty: 1,
+                mrp_price: round0(mrp),
+                bought_price: round0(bought),
+                price: round0(price)
+              });
+              
+              // Clear input and hide results
+              barcodeInput.value = '';
+              barcodeResults.style.display = 'none';
+              barcodeResults.innerHTML = '';
+            });
+          });
+        } else {
+          barcodeResults.style.display = 'none';
+          barcodeResults.innerHTML = '';
+        }
+      } catch (err) {
+        console.error('Barcode search error:', err);
+        barcodeResults.style.display = 'none';
+      }
+    }, 300);
+  });
+
+  // Hide results when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!barcodeInput.contains(e.target) && !barcodeResults.contains(e.target)) {
+      barcodeResults.style.display = 'none';
+    }
+  });
+
+  // Hide results on Enter key (add exact barcode instead)
+  barcodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      barcodeResults.style.display = 'none';
+      barcodeResults.innerHTML = '';
+    }
+  });
 </script>
 
 <style>
@@ -1242,9 +1357,12 @@ async function doAndroidPrintWithOverride(useTotal){
     async: true,
     override_grand_total: Math.round(finalOverride),
     charge_amount: Math.round(finalOverride),
-    redeem_points: Number(lpRedeem || 0)
+    redeem_points: Number(lpRedeem || 0),
+    is_edit_mode: !!window.__editInvoiceId
   };
-  if (window.__reservedInvoiceId) {
+  if (window.__editInvoiceId) {
+    toSave.invoice_id = window.__editInvoiceId;
+  } else if (window.__reservedInvoiceId) {
     toSave.invoice_id = window.__reservedInvoiceId;
   }
 
@@ -1390,6 +1508,45 @@ function cleanOldCache() {
   cleanOldCache();
 
   // Don't auto-fetch loyalty points on page load - user must click Fetch button
+
+  // Check if we're in edit mode
+  const editInvoiceId = '{{ edit_invoice_id|default("") }}';
+  if (editInvoiceId) {
+    console.log('[DRIP] Edit mode for invoice:', editInvoiceId);
+    try {
+      const res = await fetch(`{{ url_for('billing.api_get_invoice', invoice_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', editInvoiceId));
+      const j = await res.json();
+      if (j.ok) {
+        // Populate customer details
+        document.getElementById('custName').value = j.customer_name || 'Guest';
+        document.getElementById('custPhone').value = j.phone || '';
+        
+        // Populate cart
+        cart = j.items.map(item => ({
+          brand: item.brand || '',
+          category: item.category || '',
+          size: item.size || '',
+          qty: item.qty || 1,
+          mrp_price: item.mrp_price || 0,
+          bought_price: item.bought_price || 0,
+          price: item.effective_unit_price || item.price || 0,
+          original_price: item.price || 0,
+          code: item.code || ''
+        }));
+        
+        // Set edit mode flag
+        window.__editInvoiceId = editInvoiceId;
+        
+        renderCart();
+        console.log('[DRIP] Invoice loaded for editing');
+      } else {
+        alert('Failed to load invoice: ' + (j.error || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error('[DRIP] Error loading invoice:', e);
+      alert('Error loading invoice');
+    }
+  }
 
   const params = new URLSearchParams(window.location.search);
   const code = (params.get('code') || '').trim();

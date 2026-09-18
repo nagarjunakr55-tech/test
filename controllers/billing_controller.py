@@ -217,6 +217,9 @@ def api_checkout():
         def _persist_with_loyalty():
             import logging
 
+            # Check if we're updating an existing invoice
+            is_update = data.get("is_edit_mode", False)
+
             # Step 1: Always persist the invoice first
             try:
                 save_to_db(
@@ -228,7 +231,8 @@ def api_checkout():
                     discount_amt=totals["discount_amt"],
                     gst_amt=totals["gst"],
                     grand_total=effective_final,
-                    invoice_text=invoice_text
+                    invoice_text=invoice_text,
+                    update_existing=is_update
                 )
             except Exception as e:
                 logging.error(f"Background save_to_db failed for {invoice_id}: {e}")
@@ -314,6 +318,9 @@ def api_checkout():
         pass
 
     def _persist():
+        # Check if we're updating an existing invoice
+        is_update = data.get("is_edit_mode", False)
+        
         # Persist invoice — let exceptions propagate so caller can return 500
         save_to_db(
             invoice_id=invoice_id,
@@ -324,7 +331,8 @@ def api_checkout():
             discount_amt=totals["discount_amt"],
             gst_amt=totals["gst"],
             grand_total=effective_final,
-            invoice_text=invoice_text
+            invoice_text=invoice_text,
+            update_existing=is_update
         )
         # Update points info on sales_history row (best-effort)
         try:
@@ -451,6 +459,94 @@ def api_barcode_lookup():
         "price":       to_int_or_none(sp) or 0
     }
     return jsonify({"ok": True, "item": item})
+
+@billing_bp.get("/api/barcode_search", endpoint="api_barcode_search")
+def api_barcode_search():
+    """Search barcode catalog by barcode, brand, or category"""
+    query = (request.args.get("q") or "").strip()
+    limit = int(request.args.get("limit", 20))
+    
+    if not query or len(query) < 2:
+        return jsonify({"ok": True, "results": []})
+    
+    query_upper = query.upper()
+    
+    def to_int_or_none(x):
+        if x is None: return None
+        try:
+            return int(float(str(x).strip()))
+        except Exception:
+            return None
+    
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT barcode_data, brand, category, size, mrp, bought_price, selling_price
+                FROM public.barcode_catalog
+                WHERE (status IS NULL OR status='available')
+                  AND (barcode_data ILIKE %s OR brand ILIKE %s OR category ILIKE %s)
+                ORDER BY brand, category
+                LIMIT %s
+                """,
+                (f"%{query_upper}%", f"%{query}%", f"%{query}%", limit)
+            )
+            rows = cur.fetchall()
+    
+    results = []
+    for row in rows:
+        barcode, brand, category, size, mrp, bought, sp = row
+        results.append({
+            "code": barcode or "",
+            "brand": brand or "",
+            "category": category or "",
+            "size": size or "",
+            "mrp_price": to_int_or_none(mrp),
+            "bought_price": to_int_or_none(bought),
+            "price": to_int_or_none(sp) or 0
+        })
+    
+    return jsonify({"ok": True, "results": results})
+
+@billing_bp.get("/api/invoice/<invoice_id>", endpoint="api_get_invoice")
+def api_get_invoice(invoice_id):
+    """Get invoice details for editing"""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT customer_name, phone, items, grand_total, discount, gst, total
+                FROM public.sales_history
+                WHERE invoice_id = %s
+                LIMIT 1
+                """,
+                (invoice_id,)
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    customer_name, phone, items_json, grand_total, discount, gst, total = row
+    import json
+    items = json.loads(items_json) if items_json else []
+
+    return jsonify({
+        "ok": True,
+        "invoice_id": invoice_id,
+        "customer_name": customer_name or "",
+        "phone": phone or "",
+        "items": items,
+        "grand_total": float(grand_total or 0),
+        "discount": float(discount or 0),
+        "gst": float(gst or 0),
+        "total": float(total or 0)
+    })
+
+@billing_bp.get("/billing/edit/<invoice_id>", endpoint="edit_invoice")
+def edit_invoice(invoice_id):
+    """Render billing page in edit mode with pre-populated data"""
+    return render_template("billing.html", edit_invoice_id=invoice_id)
 
 # -----------------------------
 # TSPL / Receipt endpoints (public fetch by printer)

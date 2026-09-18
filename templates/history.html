@@ -50,6 +50,12 @@
         <td>+{{ row[5]|int }}</td>  <!-- NEW: rewards earned (₹) -->
 
         <td>
+          {% if is_admin %}
+          <a class="btn" href="{{ url_for('billing.edit_invoice', invoice_id=row[0]) }}"
+             style="background:#ff9800;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;margin-right:4px;">
+             Edit
+          </a>
+          {% endif %}
           <a class="btn" href="{{ url_for('history.reprint', invoice_id=row[0]) }}"
              style="background:#6a1b9a;color:#fff;border:none;padding:4px 8px;border-radius:6px;font-size:13px;box-shadow:none;text-decoration:none;">
              Reprint

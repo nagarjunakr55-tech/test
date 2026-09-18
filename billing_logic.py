@@ -473,22 +473,36 @@ def generate_invoice_text(
 # ---------------------------------
 # Persistence
 # ---------------------------------
-def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text=""):
+def save_to_db(invoice_id, name, phone, items, subtotal, discount_amt, gst_amt, grand_total, invoice_text="", update_existing=False):
     conn = get_connection()
     cur = conn.cursor()
 
     date_str = india_date_str()
 
-    # invoice header/body
-    cur.execute("""
-        INSERT INTO sales_history
-        (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (invoice_id) DO NOTHING
-    """, (
-        invoice_id, name, phone, json.dumps(items), subtotal,
-        discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
-    ))
+    if update_existing:
+        # Update existing invoice
+        cur.execute("""
+            UPDATE sales_history
+            SET customer_name=%s, phone=%s, items=%s, total=%s, discount=%s, gst=%s, grand_total=%s, invoice_text=%s
+            WHERE invoice_id=%s
+        """, (
+            name, phone, json.dumps(items), subtotal,
+            discount_amt, gst_amt, grand_total, invoice_text, invoice_id
+        ))
+        
+        # Delete existing barcode sales for this invoice
+        cur.execute("DELETE FROM sales_barcodes WHERE invoice_id=%s", (invoice_id,))
+    else:
+        # Insert new invoice
+        cur.execute("""
+            INSERT INTO sales_history
+            (invoice_id, customer_name, phone, items, total, discount, gst, grand_total, gstin, date, invoice_text)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (invoice_id) DO NOTHING
+        """, (
+            invoice_id, name, phone, json.dumps(items), subtotal,
+            discount_amt, gst_amt, grand_total, GSTIN, date_str, invoice_text
+        ))
 
     # record barcode sales (skip manual items without a code)
     for it in items:
