@@ -27,13 +27,13 @@
 </div>
 
 <!-- Barcode (manual input only) -->
-<div class="row" style="margin-top:10px; position:relative; flex-wrap:nowrap;">
-  <label for="barcode" class="nowrap">Barcode</label>
-  <div style="position:relative; flex:1;">
+<div class="row" style="margin-top:10px; position:relative; flex-wrap:nowrap; gap:8px; overflow-x:auto;">
+  <label for="barcode" class="nowrap" style="flex:0 0 auto;">Barcode</label>
+  <div style="position:relative; flex:1 1 auto; min-width:120px;">
     <input id="barcode" type="text"
          placeholder="Search barcode, brand, or category"
          maxlength="20"
-         style="width:100%;"
+         style="width:100%; padding:10px 12px; border-radius:6px; border:1px solid #ccc; font-size:15px;"
          autocomplete="off">
 
     <!-- Barcode search results dropdown -->
@@ -44,7 +44,7 @@
     </div>
   </div>
 
-  <select id="barcodeCategory" style="min-width:90px; margin-left:6px; padding:6px 4px; font-size:14px;">
+  <select id="barcodeCategory" style="flex:0 0 100px; width:100px; padding:10px 8px; font-size:15px; border-radius:6px; border:1px solid #ccc;">
     <option value="">All</option>
     <option>Shirt</option>
     <option>Pant</option>
@@ -53,12 +53,12 @@
   </select>
 
   <button id="btnBarcode"
-        style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
+        style="flex:0 0 auto; background:#ff9800;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:15px;">
     Add
   </button>
 
   <button id="btnScan" type="button"
-        style="background:#9c27b0;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
+        style="flex:0 0 auto; background:#9c27b0;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:15px;">
     Scan
   </button>
 </div>
