@@ -48,8 +48,10 @@
     <option value="">All</option>
     <option>Shirt</option>
     <option>Pant</option>
-    <option>Short</option>
     <option>T-Shirt</option>
+    <option>Short</option>
+    <option>Track</option>
+    <option>Hoodies</option>
   </select>
 
   <button id="btnBarcode"
@@ -68,7 +70,7 @@
   <div class="row" style="margin-top:4px;">
     <input id="mBrand" type="text" placeholder="Brand" class="grow" style="min-width:160px;">
     <select id="mCategory" style="min-width:120px;">
-      <option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+      <option>Shirt</option><option>Pant</option><option>T-Shirt</option><option>Short</option><option>Track</option><option>Hoodies</option>
     </select>
     <select id="mSize" style="min-width:90px;"></select>
     <input id="mPrice" type="number" min="0" step="1" placeholder="Price" style="width:120px;">
@@ -443,7 +445,7 @@
     <div class="row">
       <input id="sBrand" placeholder="brand contains..." class="grow" style="min-width:140px;">
       <select id="sCategory" style="min-width:140px;">
-        <option value="">Any</option><option>Shirt</option><option>Pant</option><option>Short</option><option>T-Shirt</option>
+        <option value="">Any</option><option>Shirt</option><option>Pant</option><option>T-Shirt</option><option>Short</option><option>Track</option><option>Hoodies</option>
       </select>
       <input id="sSize" placeholder="size (optional)" style="width:140px;">
       <button id="sGo">Search</button>
@@ -623,7 +625,7 @@ const mSize = document.getElementById('mSize');
 const mCategory = document.getElementById('mCategory');
 function refreshSizes() {
   const c = mCategory.value;
-  const sizes = (c === 'Shirt' || c === 'T-Shirt') ? ['S','M','L','XL','XXL','3XL','4XL'] : ['28','30','32','34','36','38','40','42','44'];
+  const sizes = (c === 'Shirt' || c === 'T-Shirt' || c === 'Track' || c === 'Hoodies') ? ['S','M','L','XL','XXL','3XL','4XL'] : ['28','30','32','34','36','38','40','42','44'];
   mSize.innerHTML = sizes.map(s=>`<option>${s}</option>`).join('');
 }
 mCategory.addEventListener('change', refreshSizes);
