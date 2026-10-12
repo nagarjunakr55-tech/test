@@ -30,19 +30,27 @@
 <div class="row" style="margin-top:10px; position:relative;">
   <label for="barcode" class="nowrap">Barcode</label>
   <div style="position:relative; flex:1;">
-    <input id="barcode" type="text" 
-         placeholder="Search barcode, brand, or category" 
+    <input id="barcode" type="text"
+         placeholder="Search barcode, brand, or category"
          maxlength="20"
          style="width:100%;"
          autocomplete="off">
 
     <!-- Barcode search results dropdown -->
-    <div id="barcodeSearchResults" 
-         style="display:none; position:absolute; top:100%; left:0; right:0; 
-                background:#fff; border:1px solid #ddd; border-radius:6px; 
+    <div id="barcodeSearchResults"
+         style="display:none; position:absolute; top:100%; left:0; right:0;
+                background:#fff; border:1px solid #ddd; border-radius:6px;
                 max-height:300px; overflow-y:auto; z-index:1000; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
     </div>
   </div>
+
+  <select id="barcodeCategory" style="min-width:120px; margin-left:8px;">
+    <option value="">All Categories</option>
+    <option>Shirt</option>
+    <option>Pant</option>
+    <option>Short</option>
+    <option>T-Shirt</option>
+  </select>
 
   <button id="btnBarcode"
         style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
@@ -91,23 +99,28 @@
 
   barcodeInput.addEventListener('input', async (e) => {
     const query = e.target.value.trim();
-    
+    const selectedCategory = document.getElementById('barcodeCategory').value;
+
     // Clear previous timeout
     if (barcodeSearchTimeout) {
       clearTimeout(barcodeSearchTimeout);
     }
-    
+
     // Hide results if query is too short
     if (query.length < 2) {
       barcodeResults.style.display = 'none';
       barcodeResults.innerHTML = '';
       return;
     }
-    
+
     // Debounce search
     barcodeSearchTimeout = setTimeout(async () => {
       try {
-        const res = await fetch(`{{ url_for('billing.api_barcode_search') }}?q=${encodeURIComponent(query)}&limit=20`);
+        let apiUrl = `{{ url_for('billing.api_barcode_search') }}?q=${encodeURIComponent(query)}&limit=20`;
+        if (selectedCategory) {
+          apiUrl += `&category=${encodeURIComponent(selectedCategory)}`;
+        }
+        const res = await fetch(apiUrl);
         const j = await res.json();
         
         if (j.ok && j.results && j.results.length > 0) {
@@ -177,7 +190,8 @@
 
   // Hide results when clicking outside
   document.addEventListener('click', (e) => {
-    if (!barcodeInput.contains(e.target) && !barcodeResults.contains(e.target)) {
+    const categoryDropdown = document.getElementById('barcodeCategory');
+    if (!barcodeInput.contains(e.target) && !barcodeResults.contains(e.target) && !categoryDropdown.contains(e.target)) {
       barcodeResults.style.display = 'none';
     }
   });
@@ -187,6 +201,96 @@
     if (e.key === 'Enter') {
       barcodeResults.style.display = 'none';
       barcodeResults.innerHTML = '';
+    }
+  });
+
+  // Trigger search when category changes
+  document.getElementById('barcodeCategory').addEventListener('change', async (e) => {
+    const query = barcodeInput.value.trim();
+    const selectedCategory = e.target.value;
+
+    // Clear previous timeout
+    if (barcodeSearchTimeout) {
+      clearTimeout(barcodeSearchTimeout);
+    }
+
+    // If no query and no category, hide results
+    if (!query && !selectedCategory) {
+      barcodeResults.style.display = 'none';
+      barcodeResults.innerHTML = '';
+      return;
+    }
+
+    // Trigger search immediately (no debounce for category change)
+    try {
+      let apiUrl = `{{ url_for('billing.api_barcode_search') }}?q=${encodeURIComponent(query || '*')}&limit=20`;
+      if (selectedCategory) {
+        apiUrl += `&category=${encodeURIComponent(selectedCategory)}`;
+      }
+      const res = await fetch(apiUrl);
+      const j = await res.json();
+
+      if (j.ok && j.results && j.results.length > 0) {
+        // Render results
+        barcodeResults.innerHTML = j.results.map(item => `
+          <div class="barcode-result-item"
+               data-code="${item.code}"
+               data-brand="${item.brand}"
+               data-category="${item.category}"
+               data-size="${item.size}"
+               data-mrp="${item.mrp_price}"
+               data-bought="${item.bought_price}"
+               data-price="${item.price}"
+               style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center;">
+            <div style="flex:1;">
+              <div style="font-weight:600; color:#333;">${item.brand}</div>
+              <div style="font-size:13px; color:#666;">${item.category} | ${item.size}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:13px; color:#666; font-family:monospace;">${item.code}</div>
+              <div style="font-size:13px; color:#2e7d32; font-weight:600;">₹${item.price}</div>
+            </div>
+          </div>
+        `).join('');
+
+        barcodeResults.style.display = 'block';
+
+        // Add click handlers
+        document.querySelectorAll('.barcode-result-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const code = item.getAttribute('data-code');
+            const brand = item.getAttribute('data-brand');
+            const category = item.getAttribute('data-category');
+            const size = item.getAttribute('data-size');
+            const mrp = item.getAttribute('data-mrp');
+            const bought = item.getAttribute('data-bought');
+            const price = item.getAttribute('data-price');
+
+            // Add to cart
+            upsertCartItem({
+              code: code,
+              brand: brand,
+              category: category,
+              size: size,
+              qty: 1,
+              mrp_price: round0(mrp),
+              bought_price: round0(bought),
+              price: round0(price)
+            });
+
+            // Clear input and hide results
+            barcodeInput.value = '';
+            barcodeResults.style.display = 'none';
+            barcodeResults.innerHTML = '';
+          });
+        });
+      } else {
+        barcodeResults.style.display = 'none';
+        barcodeResults.innerHTML = '';
+      }
+    } catch (err) {
+      console.error('Barcode search error:', err);
+      barcodeResults.style.display = 'none';
     }
   });
 </script>

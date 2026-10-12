@@ -462,37 +462,53 @@ def api_barcode_lookup():
 
 @billing_bp.get("/api/barcode_search", endpoint="api_barcode_search")
 def api_barcode_search():
-    """Search barcode catalog by barcode, brand, or category"""
+    """Search barcode catalog by barcode, brand, or category, with optional category filter"""
     query = (request.args.get("q") or "").strip()
+    category_filter = (request.args.get("category") or "").strip()
     limit = int(request.args.get("limit", 20))
-    
-    if not query or len(query) < 2:
+
+    # Allow wildcard search when only category is selected
+    if not query and not category_filter:
         return jsonify({"ok": True, "results": []})
-    
+
     query_upper = query.upper()
-    
+
     def to_int_or_none(x):
         if x is None: return None
         try:
             return int(float(str(x).strip()))
         except Exception:
             return None
-    
+
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Build dynamic query based on filters
+            conditions = ["(status IS NULL OR status='available')"]
+            params = []
+
+            if query and query != '*':
+                conditions.append("(barcode_data ILIKE %s OR brand ILIKE %s OR category ILIKE %s)")
+                params.extend([f"%{query_upper}%", f"%{query}%", f"%{query}%"])
+
+            if category_filter:
+                conditions.append("category = %s")
+                params.append(category_filter)
+
+            where_clause = " AND ".join(conditions)
+            params.append(limit)
+
             cur.execute(
-                """
+                f"""
                 SELECT barcode_data, brand, category, size, mrp, bought_price, selling_price
                 FROM public.barcode_catalog
-                WHERE (status IS NULL OR status='available')
-                  AND (barcode_data ILIKE %s OR brand ILIKE %s OR category ILIKE %s)
+                WHERE {where_clause}
                 ORDER BY brand, category
                 LIMIT %s
                 """,
-                (f"%{query_upper}%", f"%{query}%", f"%{query}%", limit)
+                params
             )
             rows = cur.fetchall()
-    
+
     results = []
     for row in rows:
         barcode, brand, category, size, mrp, bought, sp = row
@@ -505,7 +521,7 @@ def api_barcode_search():
             "bought_price": to_int_or_none(bought),
             "price": to_int_or_none(sp) or 0
         })
-    
+
     return jsonify({"ok": True, "results": results})
 
 @billing_bp.get("/api/invoice/<invoice_id>", endpoint="api_get_invoice")
