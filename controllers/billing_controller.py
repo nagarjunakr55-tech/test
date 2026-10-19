@@ -1,7 +1,10 @@
 import time
 import re
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, abort, Response
 from db import get_connection
+
+log = logging.getLogger("drip.billing")
 
 from billing_logic import (
     generate_unique_invoice_id,

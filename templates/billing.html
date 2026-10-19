@@ -27,13 +27,13 @@
 </div>
 
 <!-- Barcode (manual input only) -->
-<div class="row" style="margin-top:10px; position:relative; flex-wrap:nowrap; gap:8px; overflow-x:auto;">
-  <label for="barcode" class="nowrap" style="flex:0 0 auto;">Barcode</label>
-  <div style="position:relative; flex:1 1 auto; min-width:120px;">
+<div class="row" style="margin-top:10px; position:relative;">
+  <label for="barcode" class="nowrap">Barcode</label>
+  <div style="position:relative; flex:1;">
     <input id="barcode" type="text"
          placeholder="Search barcode, brand, or category"
          maxlength="20"
-         style="width:100%; padding:10px 12px; border-radius:6px; border:1px solid #ccc; font-size:15px;"
+         style="width:100%;"
          autocomplete="off">
 
     <!-- Barcode search results dropdown -->
@@ -44,7 +44,7 @@
     </div>
   </div>
 
-  <select id="barcodeCategory" style="flex:0 0 100px; width:100px; padding:10px 8px; font-size:15px; border-radius:6px; border:1px solid #ccc;">
+  <select id="barcodeCategory" style="width:100px; padding:6px 8px; font-size:15px; border-radius:6px; border:1px solid #ccc;">
     <option value="">All</option>
     <option>Shirt</option>
     <option>Pant</option>
@@ -55,12 +55,12 @@
   </select>
 
   <button id="btnBarcode"
-        style="flex:0 0 auto; background:#ff9800;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:15px;">
+        style="background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">
     Add
   </button>
 
   <button id="btnScan" type="button"
-        style="flex:0 0 auto; background:#9c27b0;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:15px;">
+        style="background:#9c27b0;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:600;">
     Scan
   </button>
 </div>
@@ -83,10 +83,6 @@
 </div>
 
 <script>
-  // Force barcode input to uppercase
-  document.getElementById('barcode').addEventListener('input', e => {
-    e.target.value = e.target.value.toUpperCase();
-  });
   const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
   function round0(n){ return Math.round(Number(n || 0)); }
   function money(n){ return '₹' + Math.round(Number(n||0)); }
@@ -122,19 +118,22 @@
         if (selectedCategory) {
           apiUrl += `&category=${encodeURIComponent(selectedCategory)}`;
         }
+        console.log('API URL:', apiUrl);
         const res = await fetch(apiUrl);
         const j = await res.json();
+        console.log('Response:', j);
         
         if (j.ok && j.results && j.results.length > 0) {
+          console.log('Rendering', j.results.length, 'results');
           // Render results
           barcodeResults.innerHTML = j.results.map(item => `
-            <div class="barcode-result-item" 
-                 data-code="${item.code}" 
-                 data-brand="${item.brand}" 
-                 data-category="${item.category}" 
-                 data-size="${item.size}" 
-                 data-mrp="${item.mrp_price}" 
-                 data-bought="${item.bought_price}" 
+            <div class="barcode-result-item"
+                 data-code="${item.code}"
+                 data-brand="${item.brand}"
+                 data-category="${item.category}"
+                 data-size="${item.size}"
+                 data-mrp="${item.mrp_price}"
+                 data-bought="${item.bought_price}"
                  data-price="${item.price}"
                  style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center;">
               <div style="flex:1;">
@@ -147,9 +146,13 @@
               </div>
             </div>
           `).join('');
-          
+
+          console.log('HTML rendered, setting display to block');
           barcodeResults.style.display = 'block';
-          
+          console.log('Display is now:', barcodeResults.style.display);
+          console.log('Element visible:', barcodeResults.offsetHeight > 0);
+          console.log('Element HTML length:', barcodeResults.innerHTML.length);
+
           // Add click handlers
           document.querySelectorAll('.barcode-result-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -160,7 +163,7 @@
               const mrp = item.getAttribute('data-mrp');
               const bought = item.getAttribute('data-bought');
               const price = item.getAttribute('data-price');
-              
+
               // Add to cart
               upsertCartItem({
                 code: code,
@@ -172,7 +175,7 @@
                 bought_price: round0(bought),
                 price: round0(price)
               });
-              
+
               // Clear input and hide results
               barcodeInput.value = '';
               barcodeResults.style.display = 'none';
@@ -194,6 +197,96 @@
   document.addEventListener('click', (e) => {
     const categoryDropdown = document.getElementById('barcodeCategory');
     if (!barcodeInput.contains(e.target) && !barcodeResults.contains(e.target) && !categoryDropdown.contains(e.target)) {
+      barcodeResults.style.display = 'none';
+    }
+  });
+
+  // Trigger search when category changes
+  document.getElementById('barcodeCategory').addEventListener('change', async (e) => {
+    const query = barcodeInput.value.trim();
+    const selectedCategory = e.target.value;
+
+    // Clear previous timeout
+    if (barcodeSearchTimeout) {
+      clearTimeout(barcodeSearchTimeout);
+    }
+
+    // If no query and no category, hide results
+    if (!query && !selectedCategory) {
+      barcodeResults.style.display = 'none';
+      barcodeResults.innerHTML = '';
+      return;
+    }
+
+    // Trigger search immediately (no debounce for category change)
+    try {
+      let apiUrl = `{{ url_for('billing.api_barcode_search') }}?q=${encodeURIComponent(query || '*')}&limit=20`;
+      if (selectedCategory) {
+        apiUrl += `&category=${encodeURIComponent(selectedCategory)}`;
+      }
+      const res = await fetch(apiUrl);
+      const j = await res.json();
+
+      if (j.ok && j.results && j.results.length > 0) {
+        // Render results
+        barcodeResults.innerHTML = j.results.map(item => `
+          <div class="barcode-result-item"
+               data-code="${item.code}"
+               data-brand="${item.brand}"
+               data-category="${item.category}"
+               data-size="${item.size}"
+               data-mrp="${item.mrp_price}"
+               data-bought="${item.bought_price}"
+               data-price="${item.price}"
+               style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center;">
+            <div style="flex:1;">
+              <div style="font-weight:600; color:#333;">${item.brand}</div>
+              <div style="font-size:13px; color:#666;">${item.category} | ${item.size}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:13px; color:#666; font-family:monospace;">${item.code}</div>
+              <div style="font-size:13px; color:#2e7d32; font-weight:600;">₹${item.price}</div>
+            </div>
+          </div>
+        `).join('');
+
+        barcodeResults.style.display = 'block';
+
+        // Add click handlers
+        document.querySelectorAll('.barcode-result-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const code = item.getAttribute('data-code');
+            const brand = item.getAttribute('data-brand');
+            const category = item.getAttribute('data-category');
+            const size = item.getAttribute('data-size');
+            const mrp = item.getAttribute('data-mrp');
+            const bought = item.getAttribute('data-bought');
+            const price = item.getAttribute('data-price');
+
+            // Add to cart
+            upsertCartItem({
+              code: code,
+              brand: brand,
+              category: category,
+              size: size,
+              qty: 1,
+              mrp_price: round0(mrp),
+              bought_price: round0(bought),
+              price: round0(price)
+            });
+
+            // Clear input and hide results
+            barcodeInput.value = '';
+            barcodeResults.style.display = 'none';
+            barcodeResults.innerHTML = '';
+          });
+        });
+      } else {
+        barcodeResults.style.display = 'none';
+        barcodeResults.innerHTML = '';
+      }
+    } catch (err) {
+      console.error('Barcode search error:', err);
       barcodeResults.style.display = 'none';
     }
   });
